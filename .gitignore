@@ -6,6 +6,9 @@ snirect
 *.so
 *.dylib
 
+# Distribution folder
+dist/
+
 # Logs
 log.txt
 *.log
