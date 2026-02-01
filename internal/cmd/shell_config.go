@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"snirect/internal/config"
 
 	"github.com/spf13/cobra"
@@ -15,18 +16,22 @@ var proxyEnvCmd = &cobra.Command{
 		appDir, _ := config.GetAppDataDir()
 		cfgPath := filepath.Join(appDir, "config.toml")
 		cfg, err := config.LoadConfig(cfgPath)
-		
-		port := 7654 // Default fallback
+
+		port := 7654
 		if err == nil {
 			port = cfg.Server.Port
 		}
 
-		fmt.Printf("export http_proxy=http://127.0.0.1:%d\n", port)
-		fmt.Printf("export https_proxy=http://127.0.0.1:%d\n", port)
+		if runtime.GOOS == "windows" {
+			fmt.Printf("set http_proxy=http://127.0.0.1:%d\n", port)
+			fmt.Printf("set https_proxy=http://127.0.0.1:%d\n", port)
+		} else {
+			fmt.Printf("export http_proxy=http://127.0.0.1:%d\n", port)
+			fmt.Printf("export https_proxy=http://127.0.0.1:%d\n", port)
+		}
 	},
 }
 
 func init() {
 	RootCmd.AddCommand(proxyEnvCmd)
 }
-

@@ -1,14 +1,11 @@
 package cmd
 
 import (
-
 	"fmt"
 
 	"os"
 
 	"os/signal"
-
-	"syscall"
 
 	"path/filepath"
 
@@ -24,13 +21,8 @@ import (
 
 	"time"
 
-
-
 	"github.com/spf13/cobra"
-
 )
-
-
 
 func runProxy(cmd *cobra.Command) {
 
@@ -46,15 +38,11 @@ func runProxy(cmd *cobra.Command) {
 
 	}
 
-
-
 	configPath := filepath.Join(appDir, "config.toml")
 
 	rulesPath := filepath.Join(appDir, "rules.toml")
 
 	certDir := filepath.Join(appDir, "certs")
-
-
 
 	// Ensure restricted permissions
 
@@ -66,8 +54,6 @@ func runProxy(cmd *cobra.Command) {
 
 	}
 
-
-
 	// 2. Load Config
 
 	cfg, err := config.LoadConfig(configPath)
@@ -77,8 +63,6 @@ func runProxy(cmd *cobra.Command) {
 		fmt.Printf("Warning: Failed to load config.toml: %v. Using defaults.\n", err)
 
 	}
-
-	
 
 	// Override setproxy from config if flag is explicitly passed
 
@@ -92,8 +76,6 @@ func runProxy(cmd *cobra.Command) {
 
 	}
 
-
-
 	// Init Logger
 	logger.SetLevel(cfg.Log.Level)
 	if cfg.Log.File != "" {
@@ -101,7 +83,7 @@ func runProxy(cmd *cobra.Command) {
 			fmt.Printf("Failed to set log file: %v\n", err)
 		}
 	}
-	
+
 	// 3. Init CA
 	caCertPath := filepath.Join(certDir, "root.crt")
 	caKeyPath := filepath.Join(certDir, "root.key")
@@ -141,9 +123,8 @@ func runProxy(cmd *cobra.Command) {
 	// Print Usage Info
 	printUsageInfo(cfg.Server.Port)
 
-	// 7. Wait for signal
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(c, os.Interrupt)
 	<-c
 	logger.Info("Shutting down...")
 }

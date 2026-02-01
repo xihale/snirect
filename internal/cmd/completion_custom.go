@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/spf13/cobra"
 )
@@ -38,7 +39,7 @@ Fish:
 	Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 	Run: func(cmd *cobra.Command, args []string) {
 		shell := args[0]
-		
+
 		if installCompletion {
 			installShellCompletion(shell, cmd)
 		} else {
@@ -73,7 +74,7 @@ func installShellCompletion(shell string, cmd *cobra.Command) {
 
 	switch shell {
 	case "bash":
-		path = filepath.Join(homeDir, ".local", "share", "bash-completion", "completions", "snirect")
+		path = getBashCompletionPath(homeDir)
 		err = os.MkdirAll(filepath.Dir(path), 0755)
 		if err == nil {
 			f, errCreate := os.Create(path)
@@ -85,21 +86,23 @@ func installShellCompletion(shell string, cmd *cobra.Command) {
 			}
 		}
 	case "zsh":
-		path = filepath.Join(homeDir, ".zfunc", "_snirect")
+		path = getZshCompletionPath(homeDir)
 		err = os.MkdirAll(filepath.Dir(path), 0755)
 		if err == nil {
 			f, errCreate := os.Create(path)
 			if errCreate == nil {
 				defer f.Close()
 				errGen = cmd.Root().GenZshCompletion(f)
-				fmt.Println("Note: Ensure ~/.zfunc is in your fpath in .zshrc:")
-				fmt.Println("      fpath+=~/.zfunc; autoload -U compinit; compinit")
+				if runtime.GOOS != "windows" {
+					fmt.Println("Note: Ensure ~/.zfunc is in your fpath in .zshrc:")
+					fmt.Println("      fpath+=~/.zfunc; autoload -U compinit; compinit")
+				}
 			} else {
 				err = errCreate
 			}
 		}
 	case "fish":
-		path = filepath.Join(homeDir, ".config", "fish", "completions", "snirect.fish")
+		path = getFishCompletionPath(homeDir)
 		err = os.MkdirAll(filepath.Dir(path), 0755)
 		if err == nil {
 			f, errCreate := os.Create(path)
@@ -111,8 +114,19 @@ func installShellCompletion(shell string, cmd *cobra.Command) {
 			}
 		}
 	case "powershell":
-		fmt.Println("Automatic installation for PowerShell is not currently supported.")
-		return
+		path = getPowerShellCompletionPath(homeDir)
+		err = os.MkdirAll(filepath.Dir(path), 0755)
+		if err == nil {
+			f, errCreate := os.Create(path)
+			if errCreate == nil {
+				defer f.Close()
+				errGen = cmd.Root().GenPowerShellCompletionWithDesc(f)
+				fmt.Printf("To enable PowerShell completions, add this line to your $PROFILE:\n")
+				fmt.Printf(". %s\n", path)
+			} else {
+				err = errCreate
+			}
+		}
 	}
 
 	if err != nil {
@@ -128,4 +142,26 @@ func installShellCompletion(shell string, cmd *cobra.Command) {
 	if shell == "bash" || shell == "zsh" {
 		fmt.Println("Please restart your shell for changes to take effect.")
 	}
+}
+
+func getBashCompletionPath(homeDir string) string {
+	if runtime.GOOS == "darwin" {
+		return filepath.Join(homeDir, ".bash_completion.d", "snirect")
+	}
+	return filepath.Join(homeDir, ".local", "share", "bash-completion", "completions", "snirect")
+}
+
+func getZshCompletionPath(homeDir string) string {
+	return filepath.Join(homeDir, ".zfunc", "_snirect")
+}
+
+func getFishCompletionPath(homeDir string) string {
+	return filepath.Join(homeDir, ".config", "fish", "completions", "snirect.fish")
+}
+
+func getPowerShellCompletionPath(homeDir string) string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(homeDir, "Documents", "PowerShell", "Scripts", "snirect-completion.ps1")
+	}
+	return filepath.Join(homeDir, ".config", "powershell", "snirect-completion.ps1")
 }
