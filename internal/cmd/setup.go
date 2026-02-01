@@ -15,7 +15,11 @@ import (
 var installCertCmd = &cobra.Command{
 	Use:     "install-cert",
 	Aliases: []string{"install-ca", "I", "C"},
-	Short:   "Install root CA to system trust store (requires sudo)",
+	Short:   "Install root CA to system trust store",
+	Long: `Install the root CA certificate to system trust store:
+  - Linux: trust/update-ca-certificates/update-ca-trust
+  - macOS: security add-trusted-cert (may require confirmation)
+  - Windows: certutil -addstore (may require administrator)`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := app.SetupCA(true); err != nil {
 			logger.Fatal("Failed: %v", err)
@@ -26,7 +30,11 @@ var installCertCmd = &cobra.Command{
 var setProxyCmd = &cobra.Command{
 	Use:     "set-proxy",
 	Aliases: []string{"P"},
-	Short:   "Set system proxy PAC URL and exit",
+	Short:   "Set system proxy PAC URL",
+	Long: `Configure system-wide proxy settings:
+  - Linux: gsettings (GNOME) or kwriteconfig5 (KDE)
+  - macOS: networksetup (all network interfaces)
+  - Windows: Registry (AutoConfigURL)`,
 	Run: func(cmd *cobra.Command, args []string) {
 		appDir, err := config.EnsureConfig(false)
 		if err != nil {
@@ -41,7 +49,7 @@ var setProxyCmd = &cobra.Command{
 var unsetProxyCmd = &cobra.Command{
 	Use:     "unset-proxy",
 	Aliases: []string{"U"},
-	Short:   "Clear system proxy PAC URL and exit",
+	Short:   "Clear system proxy settings",
 	Run: func(cmd *cobra.Command, args []string) {
 		sysproxy.ClearPAC()
 	},

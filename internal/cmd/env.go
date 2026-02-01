@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"sort"
 	"snirect/internal/sysproxy"
+	"sort"
 
 	"github.com/spf13/cobra"
 )
@@ -11,11 +11,14 @@ import (
 var envCmd = &cobra.Command{
 	Use:   "env",
 	Short: "Check detected system environment",
-	Long:  `Checks and lists the detected Operating System, Desktop Environment, and available proxy/certificate management tools.`,
+	Long: `Checks and lists the detected Operating System and available tools:
+  - Linux: Desktop Environment (GNOME/KDE), proxy/certificate tools
+  - macOS: Available system utilities (security, networksetup)
+  - Windows: Available system utilities (certutil, reg)`,
 	Run: func(cmd *cobra.Command, args []string) {
 		env := sysproxy.CheckEnv()
 		fmt.Println("Detected Environment:")
-		
+
 		keys := make([]string, 0, len(env))
 		for k := range env {
 			keys = append(keys, k)
@@ -31,4 +34,3 @@ var envCmd = &cobra.Command{
 func init() {
 	RootCmd.AddCommand(envCmd)
 }
-

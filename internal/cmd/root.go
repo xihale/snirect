@@ -15,13 +15,14 @@ var (
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
 	Use:   "snirect",
-	Short: "A tool to bypass SNI RST",
-	Long: `Snirect is a transparent HTTP/HTTPS proxy that modifies SNI (Server Name Indication) 
-to bypass censorship/blocking based on SNI RST.`,
+	Short: "Cross-platform tool to bypass SNI-based censorship",
+	Long: `Snirect is a transparent HTTP/HTTPS proxy that modifies SNI (Server Name Indication)
+to bypass censorship/blocking based on SNI RST.
+
+Supports: Linux, macOS, and Windows`,
 	CompletionOptions: cobra.CompletionOptions{
 		DisableDefaultCmd: true,
 	},
-	// If no subcommand is provided, run the proxy
 	Run: func(cmd *cobra.Command, args []string) {
 		runProxy(cmd)
 	},
@@ -36,7 +37,7 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
-	
+
 	RootCmd.Flags().BoolVarP(&setProxy, "set-proxy", "S", false, "Set system proxy automatically")
 }
 
