@@ -5,6 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -23,7 +24,7 @@ type CertManager struct {
 
 func NewCertManager(caCertPath, caKeyPath string) (*CertManager, error) {
 	cm := &CertManager{}
-	
+
 	// Try loading existing CA
 	certPEM, err := os.ReadFile(caCertPath)
 	if err == nil {
@@ -62,7 +63,7 @@ func (cm *CertManager) loadCA(certPEM, keyPEM []byte) error {
 	if block == nil {
 		return errors.New("failed to parse key PEM")
 	}
-	
+
 	var key interface{}
 	if block.Type == "RSA PRIVATE KEY" {
 		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
@@ -71,13 +72,17 @@ func (cm *CertManager) loadCA(certPEM, keyPEM []byte) error {
 	} else {
 		return errors.New("unknown key type: " + block.Type)
 	}
-	
+
 	if err != nil {
 		return err
 	}
 
 	cm.RootCert = cert
 	cm.RootKey = key
+
+	// Start cleanup routine
+	go cm.cleanupRoutine()
+
 	return nil
 }
 
@@ -154,34 +159,59 @@ func (cm *CertManager) saveCA(certPath, keyPath string) error {
 }
 
 func (cm *CertManager) Sign(hosts []string) ([]byte, interface{}, error) {
-    // Generate leaf key (ECDSA is faster)
-    priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-    if err != nil {
-        return nil, nil, err
-    }
+	// Generate leaf key (ECDSA is faster)
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
 
-    serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
-    serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
-    if err != nil {
-        return nil, nil, err
-    }
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+	if err != nil {
+		return nil, nil, err
+	}
 
-    template := x509.Certificate{
-        SerialNumber: serialNumber,
-        Subject: pkix.Name{
-            Organization: []string{"Snirect Proxy"},
-        },
-        NotBefore:   time.Now().Add(-1 * time.Hour),
-        NotAfter:    time.Now().Add(24 * time.Hour), // Short validity for leaf certs
-        KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-        ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-        DNSNames:    hosts,
-    }
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"Snirect Proxy"},
+		},
+		NotBefore:   time.Now().Add(-1 * time.Hour),
+		NotAfter:    time.Now().Add(24 * time.Hour), // Short validity for leaf certs
+		KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:    hosts,
+	}
 
-    derBytes, err := x509.CreateCertificate(rand.Reader, &template, cm.RootCert, &priv.PublicKey, cm.RootKey)
-    if err != nil {
-        return nil, nil, err
-    }
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, cm.RootCert, &priv.PublicKey, cm.RootKey)
+	if err != nil {
+		return nil, nil, err
+	}
 
-    return derBytes, priv, nil
+	return derBytes, priv, nil
+}
+
+func (cm *CertManager) cleanupRoutine() {
+	ticker := time.NewTicker(1 * time.Hour)
+	for range ticker.C {
+		cm.certCache.Range(func(key, value interface{}) bool {
+			// We can't easily check cert expiry without parsing, but we know we issue them for 24h.
+			// A simple strategy is to just clear the cache periodically, or check creation time if we stored it.
+			// Since we only store *tls.Certificate, we rely on the fact that if it's in cache, it was generated recently?
+			// No, it could stay there forever.
+
+			// Let's parse the leaf if not present (it usually isn't populated by our manual struct construction)
+			cert := value.(*tls.Certificate)
+			if len(cert.Certificate) > 0 {
+				// Parse the first cert in chain (leaf)
+				x509Cert, err := x509.ParseCertificate(cert.Certificate[0])
+				if err == nil {
+					if time.Now().After(x509Cert.NotAfter) {
+						cm.certCache.Delete(key)
+					}
+				}
+			}
+			return true
+		})
+	}
 }

@@ -38,7 +38,7 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	RootCmd.Flags().BoolVarP(&setProxy, "set-proxy", "S", false, "Set system proxy automatically")
+	RootCmd.Flags().BoolVarP(&setProxy, "set-proxy", "s", false, "Set system proxy automatically")
 }
 
 func initConfig() {

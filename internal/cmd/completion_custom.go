@@ -13,27 +13,23 @@ var installCompletion bool
 
 var completionCmd = &cobra.Command{
 	Use:   "completion [bash|zsh|fish|powershell]",
-	Short: "Generate completion script",
-	Long: `To load completions:
+	Short: "Generate shell completion script",
+	Long: `Generate and install shell completion scripts for snirect.
 
-Bash:
-  $ source <(snirect completion bash)
+Temporary usage (current shell only):
+  Bash:   source <(snirect completion bash)
+  Zsh:    source <(snirect completion zsh)
+  Fish:   snirect completion fish | source
 
-  # To load completions for each session, execute once:
-  $ snirect completion bash --install
+Permanent installation (automatic on new shells):
+  snirect completion bash --install    # Install for bash
+  snirect completion zsh --install     # Install for zsh
+  snirect completion fish --install    # Install for fish
 
-Zsh:
-  $ source <(snirect completion zsh)
-
-  # To load completions for each session, execute once:
-  $ snirect completion zsh --install
-
-Fish:
-  $ snirect completion fish | source
-
-  # To load completions for each session, execute once:
-  $ snirect completion fish --install
-`,
+After installation, restart your shell or run the temporary usage command.`,
+	Example: `  snirect completion bash          # Print bash completions
+  snirect completion zsh --install   # Install zsh completions permanently
+  snirect completion fish | source   # Load fish completions now`,
 	DisableFlagsInUseLine: true,
 	ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
 	Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),

@@ -4,24 +4,99 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"snirect/internal/util"
+	"sort"
 
 	"github.com/pelletier/go-toml/v2"
 )
 
 type Rules struct {
-	DNS           DNSConfig              `toml:"DNS"`
-	HTTPRedirect  map[string]string      `toml:"http_redirect"`
 	AlterHostname map[string]string      `toml:"alter_hostname"`
 	CertVerify    map[string]interface{} `toml:"cert_verify"` // []string or bool
 	Hosts         map[string]string      `toml:"hosts"`
+
+	alterHostnameKeys []string
+	certVerifyKeys    []string
+	hostsKeys         []string
 }
 
-type DNSConfig struct {
-	Nameserver []string `toml:"nameserver"`
+func (r *Rules) Init() {
+	r.alterHostnameKeys = getSortedKeys(r.AlterHostname)
+	r.certVerifyKeys = getSortedKeysInterface(r.CertVerify)
+	r.hostsKeys = getSortedKeys(r.Hosts)
+}
+
+func getSortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return len(keys[i]) > len(keys[j])
+	})
+	return keys
+}
+
+func getSortedKeysInterface(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return len(keys[i]) > len(keys[j])
+	})
+	return keys
+}
+
+func (r *Rules) GetAlterHostname(host string) (string, bool) {
+	if val, ok := r.AlterHostname[host]; ok {
+		return val, true
+	}
+
+	for _, k := range r.alterHostnameKeys {
+		if util.MatchPattern(k, host) {
+			return r.AlterHostname[k], true
+		}
+	}
+
+	return "", false
+}
+
+func (r *Rules) GetHost(host string) (string, bool) {
+	if val, ok := r.Hosts[host]; ok {
+		return val, true
+	}
+
+	for _, k := range r.hostsKeys {
+		if util.MatchPattern(k, host) {
+			return r.Hosts[k], true
+		}
+	}
+
+	return "", false
+}
+
+func (r *Rules) GetCertVerify(host string) (interface{}, bool) {
+	if val, ok := r.CertVerify[host]; ok {
+		return val, true
+	}
+
+	for _, k := range r.certVerifyKeys {
+		if util.MatchPattern(k, host) {
+			return r.CertVerify[k], true
+		}
+	}
+
+	return nil, false
 }
 
 func LoadConfig(path string) (*Config, error) {
-	cfg := DefaultConfig()
+	var cfg Config
+
+	if err := toml.Unmarshal([]byte(DefaultConfigTOML), &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse default config: %w", err)
+	}
+
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return &cfg, nil
@@ -29,8 +104,11 @@ func LoadConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if err := toml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+		// If user config is invalid, return the default config we already parsed above,
+		// but pass the error so caller knows something went wrong.
+		return &cfg, err
 	}
 	return &cfg, nil
 }
@@ -44,6 +122,7 @@ func LoadRules(path string) (*Rules, error) {
 	if err := toml.Unmarshal(data, &rules); err != nil {
 		return nil, err
 	}
+	rules.Init()
 	return &rules, nil
 }
 

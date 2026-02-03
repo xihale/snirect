@@ -55,13 +55,13 @@ func runProxy(cmd *cobra.Command) {
 	}
 
 	// 2. Load Config
-
 	cfg, err := config.LoadConfig(configPath)
-
 	if err != nil {
-
 		fmt.Printf("Warning: Failed to load config.toml: %v. Using defaults.\n", err)
-
+		if cfg == nil {
+			fmt.Println("Critical error: Config file is invalid and defaults could not be loaded. Please delete config.toml to reset.")
+			os.Exit(1)
+		}
 	}
 
 	// Override setproxy from config if flag is explicitly passed
@@ -96,6 +96,31 @@ func runProxy(cmd *cobra.Command) {
 	logger.Info("Starting Snirect...")
 	logger.Info("Config loaded from: %s", appDir)
 	logger.Info("CA initialized. Root cert: %s", caCertPath)
+
+	// Handle CA certificate installation based on importca setting
+	switch cfg.ImportCA {
+	case "never":
+		logger.Info("CA auto-installation disabled (importca = never)")
+	case "always":
+		logger.Info("Forcing CA certificate re-installation (importca = always)...")
+		if err := sysproxy.ForceInstallCert(caCertPath); err != nil {
+			logger.Warn("Failed to install root CA: %v", err)
+			logger.Warn("You may need to install the certificate manually: %s", caCertPath)
+		}
+	case "auto", "":
+		logger.Info("Checking if root CA is installed in system trust store (importca = auto)...")
+		if err := sysproxy.InstallCert(caCertPath); err != nil {
+			logger.Warn("Failed to install root CA: %v", err)
+			logger.Warn("You may need to install the certificate manually: %s", caCertPath)
+		}
+	default:
+		logger.Warn("Invalid importca value: %q. Expected: auto, always, or never. Treating as auto.", cfg.ImportCA)
+		logger.Info("Checking if root CA is installed in system trust store...")
+		if err := sysproxy.InstallCert(caCertPath); err != nil {
+			logger.Warn("Failed to install root CA: %v", err)
+			logger.Warn("You may need to install the certificate manually: %s", caCertPath)
+		}
+	}
 
 	rules, err := config.LoadRules(rulesPath)
 	if err != nil {

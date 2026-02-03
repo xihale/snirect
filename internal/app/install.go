@@ -27,9 +27,9 @@ func Install() {
 		logger.Fatal("Failed to set binary permissions: %v", err)
 	}
 
-	if err := SetupCA(true); err != nil {
-		logger.Warn("Certificate setup warning: %v. You may need to run 'snirect install-cert' manually.", err)
-	}
+	// CA certificate will be auto-generated on first run if needed
+	// (via importca = "auto" in config.toml)
+	// To manually install: snirect install-cert
 
 	installServicePlatform(binPath)
 }

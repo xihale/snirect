@@ -47,8 +47,7 @@ WantedBy=default.target
 	runSystemctl("enable", "snirect")
 
 	logger.Info("Snirect installed and registered (auto-start enabled).")
-	fmt.Printf("\nSuccess! Make sure %s is in your PATH.\n", filepath.Dir(binPath))
-	fmt.Println("To start the service now, run: systemctl --user start snirect")
+	logger.Info("Service file: %s", servicePath)
 }
 
 func runSystemctl(args ...string) {

@@ -14,9 +14,28 @@ func CheckEnv() map[string]string {
 }
 
 // InstallCert attempts to install the CA certificate to the system trust store.
+// Skips installation if certificate is already present.
 // Platform-specific implementations in sysproxy_*.go files.
 func InstallCert(certPath string) error {
 	return installCertPlatform(certPath)
+}
+
+// ForceInstallCert forces installation of the CA certificate even if already present.
+// Platform-specific implementations in sysproxy_*.go files.
+func ForceInstallCert(certPath string) error {
+	return forceInstallCertPlatform(certPath)
+}
+
+// UninstallCert removes the CA certificate from the system trust store.
+// Platform-specific implementations in sysproxy_*.go files.
+func UninstallCert(certPath string) error {
+	return uninstallCertPlatform(certPath)
+}
+
+// CheckCertStatus checks if the CA certificate is installed in the system trust store.
+// Returns true if installed, false otherwise. Platform-specific implementations.
+func CheckCertStatus(certPath string) (bool, error) {
+	return checkCertStatusPlatform(certPath)
 }
 
 // SetPAC sets the system proxy auto-config URL.

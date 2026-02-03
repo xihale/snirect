@@ -30,6 +30,16 @@ func checkEnvPlatform(env map[string]string) {
 func installCertPlatform(certPath string) error {
 	logger.Info("Attempting to install certificate: %s", certPath)
 
+	certData, err := os.ReadFile(certPath)
+	if err != nil {
+		return fmt.Errorf("failed to read certificate: %v", err)
+	}
+
+	if isCertInstalled(certData) {
+		logger.Info("Certificate already installed in system trust store")
+		return nil
+	}
+
 	keychainPath := os.ExpandEnv("$HOME/Library/Keychains/login.keychain-db")
 
 	cmd := exec.Command("security", "add-trusted-cert", "-d", "-r", "trustRoot", "-k", keychainPath, certPath)
@@ -45,6 +55,66 @@ func installCertPlatform(certPath string) error {
 	logger.Info("Certificate installed successfully!")
 	logger.Info("Note: You may need to restart applications for changes to take effect.")
 	return nil
+}
+
+func isCertInstalled(certData []byte) bool {
+	cmd := exec.Command("security", "find-certificate", "-a", "-c", "Snirect Root CA", "-p")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	installedCerts := strings.Split(string(output), "-----END CERTIFICATE-----")
+	certStr := string(certData)
+
+	for _, installedCert := range installedCerts {
+		if strings.TrimSpace(installedCert) == "" {
+			continue
+		}
+		installedCert = strings.TrimSpace(installedCert) + "\n-----END CERTIFICATE-----\n"
+		if installedCert == certStr {
+			return true
+		}
+	}
+
+	return false
+}
+
+func forceInstallCertPlatform(certPath string) error {
+	logger.Info("Force installing certificate: %s", certPath)
+
+	uninstallCertPlatform(certPath)
+	return installCertPlatform(certPath)
+}
+
+func uninstallCertPlatform(certPath string) error {
+	logger.Info("Attempting to uninstall certificate from Keychain")
+
+	keychainPath := os.ExpandEnv("$HOME/Library/Keychains/login.keychain-db")
+
+	cmd := exec.Command("security", "delete-certificate", "-c", "Snirect Root CA", keychainPath)
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		if strings.Contains(string(output), "SecKeychainSearchCopyNext") {
+			logger.Info("Certificate was not found in Keychain")
+			return nil
+		}
+		return fmt.Errorf("failed to uninstall certificate: %v, output: %s", err, string(output))
+	}
+
+	logger.Info("Certificate uninstalled successfully from Keychain!")
+	return nil
+}
+
+func checkCertStatusPlatform(certPath string) (bool, error) {
+	certData, err := os.ReadFile(certPath)
+	if err != nil {
+		return false, fmt.Errorf("failed to read certificate: %v", err)
+	}
+
+	installed := isCertInstalled(certData)
+	return installed, nil
 }
 
 func setPACPlatform(pacURL string) {
@@ -105,4 +175,10 @@ func getNetworkInterfaces() ([]string, error) {
 	}
 
 	return interfaces, nil
+}
+
+// HasTool checks if a system tool is available in PATH
+func HasTool(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
 }

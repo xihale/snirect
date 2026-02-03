@@ -37,6 +37,16 @@ func checkEnvPlatform(env map[string]string) {
 func installCertPlatform(certPath string) error {
 	logger.Info("Attempting to install certificate: %s", certPath)
 
+	certData, err := os.ReadFile(certPath)
+	if err != nil {
+		return fmt.Errorf("failed to read certificate: %v", err)
+	}
+
+	if isCertInstalled(certData) {
+		logger.Info("Certificate already installed in system trust store")
+		return nil
+	}
+
 	var destPath string
 	var updateCmd string
 	var updateArgs []string
@@ -76,6 +86,111 @@ func installCertPlatform(certPath string) error {
 
 	logger.Info("Certificate installed successfully!")
 	return nil
+}
+
+func isCertInstalled(certData []byte) bool {
+	certPaths := []string{
+		"/usr/local/share/ca-certificates/snirect-root.crt",
+		"/etc/pki/ca-trust/source/anchors/snirect-root.crt",
+	}
+
+	for _, path := range certPaths {
+		if data, err := os.ReadFile(path); err == nil {
+			if string(data) == string(certData) {
+				return true
+			}
+		}
+	}
+
+	if path, err := exec.LookPath("trust"); err == nil {
+		cmd := exec.Command(path, "list")
+		output, err := cmd.Output()
+		if err == nil && strings.Contains(string(output), "Snirect Root CA") {
+			return true
+		}
+	}
+
+	return false
+}
+
+func forceInstallCertPlatform(certPath string) error {
+	logger.Info("Force installing certificate: %s", certPath)
+
+	uninstallCertPlatform(certPath)
+	return installCertPlatform(certPath)
+}
+
+func uninstallCertPlatform(certPath string) error {
+	logger.Info("Attempting to uninstall certificate")
+
+	certPaths := []string{
+		"/usr/local/share/ca-certificates/snirect-root.crt",
+		"/etc/pki/ca-trust/source/anchors/snirect-root.crt",
+	}
+
+	removed := false
+
+	for _, path := range certPaths {
+		if _, err := os.Stat(path); err == nil {
+			logger.Info("Removing certificate from %s...", path)
+			rmCmd := exec.Command("sudo", "rm", path)
+			rmCmd.Stdout = os.Stdout
+			rmCmd.Stderr = os.Stderr
+			if err := rmCmd.Run(); err != nil {
+				logger.Warn("Failed to remove certificate from %s: %v", path, err)
+			} else {
+				removed = true
+			}
+		}
+	}
+
+	if path, err := exec.LookPath("trust"); err == nil {
+		logger.Info("Removing certificate from trust store using trust tool...")
+		cmd := exec.Command("sudo", path, "anchor", "--remove", certPath)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			logger.Warn("Failed to remove certificate using trust: %v", err)
+		} else {
+			removed = true
+		}
+	} else if path, err := exec.LookPath("update-ca-certificates"); err == nil {
+		logger.Info("Updating CA certificates...")
+		upCmd := exec.Command("sudo", path)
+		upCmd.Stdout = os.Stdout
+		upCmd.Stderr = os.Stderr
+		if err := upCmd.Run(); err != nil {
+			return fmt.Errorf("failed to update trust store: %v", err)
+		}
+		removed = true
+	} else if path, err := exec.LookPath("update-ca-trust"); err == nil {
+		logger.Info("Updating CA trust...")
+		upCmd := exec.Command("sudo", path)
+		upCmd.Stdout = os.Stdout
+		upCmd.Stderr = os.Stderr
+		if err := upCmd.Run(); err != nil {
+			return fmt.Errorf("failed to update trust store: %v", err)
+		}
+		removed = true
+	}
+
+	if removed {
+		logger.Info("Certificate uninstalled successfully!")
+	} else {
+		logger.Info("Certificate was not found in system trust store")
+	}
+
+	return nil
+}
+
+func checkCertStatusPlatform(certPath string) (bool, error) {
+	certData, err := os.ReadFile(certPath)
+	if err != nil {
+		return false, fmt.Errorf("failed to read certificate: %v", err)
+	}
+
+	installed := isCertInstalled(certData)
+	return installed, nil
 }
 
 func setPACPlatform(pacURL string) {
@@ -130,9 +245,15 @@ func getDesktopEnvironment() string {
 	return xdg
 }
 
-func hasTool(name string) bool {
+// HasTool checks if a system tool is available in PATH
+func HasTool(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
+}
+
+// Deprecated: use HasTool instead
+func hasTool(name string) bool {
+	return HasTool(name)
 }
 
 func setGnomeProxy(pacURL string) {

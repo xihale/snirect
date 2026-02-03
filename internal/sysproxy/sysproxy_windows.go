@@ -4,8 +4,11 @@ package sysproxy
 
 import (
 	"fmt"
-	"golang.org/x/sys/windows/registry"
+	"os"
 	"os/exec"
+	"strings"
+
+	"golang.org/x/sys/windows/registry"
 	"snirect/internal/logger"
 )
 
@@ -24,6 +27,16 @@ func checkEnvPlatform(env map[string]string) {
 func installCertPlatform(certPath string) error {
 	logger.Info("Attempting to install certificate: %s", certPath)
 
+	certData, err := os.ReadFile(certPath)
+	if err != nil {
+		return fmt.Errorf("failed to read certificate: %v", err)
+	}
+
+	if isCertInstalled(certData) {
+		logger.Info("Certificate already installed in system trust store")
+		return nil
+	}
+
 	cmd := exec.Command("certutil", "-addstore", "-user", "Root", certPath)
 	output, err := cmd.CombinedOutput()
 
@@ -34,6 +47,63 @@ func installCertPlatform(certPath string) error {
 	logger.Info("Certificate installed successfully!")
 	logger.Info("Output: %s", string(output))
 	return nil
+}
+
+func isCertInstalled(certData []byte) bool {
+	cmd := exec.Command("certutil", "-user", "-verifystore", "Root", "Snirect Root CA")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	outputStr := string(output)
+	if !strings.Contains(outputStr, "Snirect Root CA") {
+		return false
+	}
+
+	cmd = exec.Command("certutil", "-user", "-store", "Root")
+	output, err = cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	return strings.Contains(string(output), "Snirect Root CA")
+}
+
+func forceInstallCertPlatform(certPath string) error {
+	logger.Info("Force installing certificate: %s", certPath)
+
+	uninstallCertPlatform(certPath)
+	return installCertPlatform(certPath)
+}
+
+func uninstallCertPlatform(certPath string) error {
+	logger.Info("Attempting to uninstall certificate from Windows certificate store")
+
+	cmd := exec.Command("certutil", "-user", "-delstore", "Root", "Snirect Root CA")
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		outputStr := string(output)
+		if strings.Contains(outputStr, "not found") || strings.Contains(outputStr, "No certificates") {
+			logger.Info("Certificate was not found in Windows certificate store")
+			return nil
+		}
+		return fmt.Errorf("failed to uninstall certificate: %v, output: %s", err, outputStr)
+	}
+
+	logger.Info("Certificate uninstalled successfully from Windows certificate store!")
+	return nil
+}
+
+func checkCertStatusPlatform(certPath string) (bool, error) {
+	certData, err := os.ReadFile(certPath)
+	if err != nil {
+		return false, fmt.Errorf("failed to read certificate: %v", err)
+	}
+
+	installed := isCertInstalled(certData)
+	return installed, nil
 }
 
 func setPACPlatform(pacURL string) {
@@ -73,4 +143,10 @@ func clearPACPlatform() {
 	}
 
 	logger.Info("Proxy cleared successfully.")
+}
+
+// HasTool checks if a system tool is available in PATH
+func HasTool(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
 }

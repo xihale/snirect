@@ -1,0 +1,69 @@
+# 这是Snirect的配置文件，保存到程序 ⚠工作目录⚠ 后重启程序生效。
+# This is the configuration file of Snirect, save it to the program ⚠ working directory ⚠ and restart the program to take effect.
+
+# 是否校验证书域名？false 不进行校验，true 进行宽松的校验（如a.example.com能匹配b.example.com），"strict" 进行标准的校验。
+# ⚠️ 警告：设为 false 会降低安全性，可能导致中间人攻击。当前默认关闭是为了兼容部分第三方公益 IP。
+# Whether to verify the certificate domains? Set to false for no verification, set to true for loose verification (e.g. a.example.com matches b.example.com), set to "strict" for standard verification.
+# ⚠️ WARNING: Setting to false reduces security and may allow MITM attacks. Currently disabled by default for compatibility with some third-party public IPs.
+check_hostname = false
+
+# 是否自动设置系统的代理。这可使用命令行参数 --set-proxy 来开启。
+# Whether to set the system proxy automatically. This can be enabled with the command line argument --set-proxy.
+setproxy = false
+
+# 是否自动导入并信任根证书。可选值：
+#   "auto"   - 自动检测，未安装时才尝试安装（默认）
+#   "always" - 每次启动都强制重新安装
+#   "never"  - 完全禁用自动安装
+# Whether to automatically import and trust the root certificate. Options:
+#   "auto"   - Auto-detect and install only if not present (default)
+#   "always" - Force re-install on every startup
+#   "never"  - Completely disable auto-installation
+importca = "auto"
+
+# 是否开启IPv6支持
+# Whether to enable IPv6 support
+ipv6 = true
+
+# EDNS Client Subnet (ECS) 配置。用于告知 DNS 服务器你的地理位置，从而返回更近的服务器 IP。
+# 设为 "auto" 则根据客户端真实 IP 自动生成，也可以填入一个 CIDR 格式的子网（如 "218.102.0.0/24"）。
+# EDNS Client Subnet (ECS). Tell the DNS server your location to get closer server IPs.
+# Set to "auto" to generate based on client IP, or enter a subnet in CIDR format (e.g., "218.102.0.0/24").
+ecs = "auto"
+
+# DNS 配置。配置自定义 DNS 服务器用于解析域名。
+# DNS configuration. Configure custom DNS servers for domain resolution.
+[DNS]
+# DNS 服务器地址，支持 DoH、DoT、DoQ 等格式
+# 默认使用 dnschina1.soraharu.com、Yandex DNS 和 Google DNS
+# DNS server addresses, supporting DoH, DoT, DoQ formats
+# Default: soraharu, Yandex and Google for better accessibility
+nameserver = [
+    "https://dnschina1.soraharu.com/dns-query",
+    "https://77.88.8.8/dns-query",
+    "https://dns.google/dns-query"
+]
+
+# 引导 DNS，用于解析 DNS 服务器自身的域名
+# Bootstrap DNS used to resolve DNS server hostnames
+bootstrap_dns = ["tls://223.5.5.5"]
+
+
+[log]
+loglevel = "DEBUG"
+logfile = "log.txt"
+
+
+[server]
+
+# 服务器绑定的地址。设为 "0.0.0.0" 可以允许同一局域网的设备连接该程序，比如用手机连接电脑的WiFi，设置PAC后既可允许手机使用。可能会有防火墙的提示，要允许访问。
+# The address to which the server is bound. Set to "0.0.0.0" to allow devices on the same LAN to connect to the program, such as using your phone to connect to your computer's WiFi, after setting the PAC to allow both your phone to use it. There may be a firewall prompt to allow access.
+address = "127.0.0.1"
+
+# 服务器的端口号，如果与其他程序发生端口冲突时可以更改，其值应为1-65535，建议>1024。
+# The port number of the server, which can be changed in case of port conflicts with other programs, should have a value of 1-65535, with >1024 recommended.
+port = 7654
+
+# PAC文件中的代理主机。如供局域网使用，应设为安装了Snirect的设备在局域网中的IP。
+# The proxy host in the PAC file. If for LAN usage, it should be set to the IP of the device on the LAN where Snirect is installed.
+pac_host = "127.0.0.1"

@@ -1,11 +1,6 @@
 package proxy
 
 import (
-	"snirect/internal/ca"
-	"snirect/internal/config"
-	"snirect/internal/dns"
-	"snirect/internal/logger"
-	"snirect/internal/tlsutil"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -13,6 +8,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"snirect/internal/ca"
+	"snirect/internal/config"
+	"snirect/internal/dns"
+	"snirect/internal/logger"
+	"snirect/internal/tlsutil"
 	"strings"
 	"time"
 )
@@ -29,7 +29,7 @@ func NewProxyServer(cfg *config.Config, rules *config.Rules, ca *ca.CertManager)
 		Config:   cfg,
 		Rules:    rules,
 		CA:       ca,
-		Resolver: dns.NewResolver(rules),
+		Resolver: dns.NewResolver(cfg, rules),
 	}
 }
 
@@ -59,26 +59,14 @@ func (s *ProxyServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle Redirects
-	path := r.URL.String() // http://example.com/foo
-	path = strings.TrimPrefix(path, "http://")
-	
-	for key, target := range s.Rules.HTTPRedirect {
-		if strings.HasPrefix(path, key) {
-			newURL := "https://" + target + path[len(key):]
-			logger.Debug("Redirect to %s", newURL)
-			http.Redirect(w, r, newURL, http.StatusMovedPermanently)
-			return
-		}
-	}
-
-	newURL := "https://" + path
-	http.Redirect(w, r, newURL, http.StatusMovedPermanently)
+	// Default: redirect all other HTTP requests to HTTPS
+	targetURL := "https://" + strings.TrimPrefix(r.URL.String(), "http://")
+	http.Redirect(w, r, targetURL, http.StatusMovedPermanently)
 }
 
 func (s *ProxyServer) handlePAC(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-ns-proxy-autoconfig")
-	
+
 	// Try reading 'pac' file from AppDataDir
 	appDir, _ := config.GetAppDataDir()
 	pacPath := filepath.Join(appDir, "pac")
@@ -110,7 +98,7 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 		host = r.Host
 		port = "443"
 	}
-	
+
 	logger.Debug("Accepted CONNECT %s from %s", r.Host, r.RemoteAddr)
 
 	// 1. Hijack
@@ -130,17 +118,31 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 
 	// 3. Bypass TLS MITM for non-HTTPS ports (e.g., SSH on port 22)
-	if port != "443" {
+	// Also bypass if no special rules and global check is enabled
+	_, hasAlter := s.Rules.GetAlterHostname(host)
+	_, hasCert := s.Rules.GetCertVerify(host)
+	globalVerify := true
+	if b, ok := s.Config.CheckHostname.(bool); ok && !b {
+		globalVerify = false
+	}
+
+	if port != "443" || (!hasAlter && !hasCert && globalVerify) {
 		s.directTunnel(r, clientConn, host, port)
 		return
 	}
 
 	// 4. TLS Handshake with Client (We act as Server)
 	tlsConfig := &tls.Config{
-		GetCertificate: s.CA.GetCertificate,
+		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			// If SNI is missing (e.g. direct IP connection), fallback to host from CONNECT
+			if hello.ServerName == "" {
+				hello.ServerName = host
+			}
+			return s.CA.GetCertificate(hello)
+		},
 	}
 	tlsClientConn := tls.Server(clientConn, tlsConfig)
-	
+
 	// Perform handshake to get SNI
 	if err := tlsClientConn.Handshake(); err != nil {
 		logger.Debug("TLS Handshake failed with client %s: %v", r.RemoteAddr, err)
@@ -155,23 +157,21 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. Determine SNI to use for Remote
-	targetSNI := "" // Default to NO SNI (Matches original behavior: if not in alter_hostname, send no SNI)
-	for key, val := range s.Rules.AlterHostname {
-		if matched, _ := filepath.Match(key, clientHelloHost); matched {
-			targetSNI = val
-			break
-		}
+	targetSNI, ok := s.Rules.GetAlterHostname(clientHelloHost)
+	if !ok {
+		targetSNI = clientHelloHost
 	}
-	
+
 	if targetSNI == "" {
 		logger.Debug("Stripping SNI for %s", host)
-	} else {
+	} else if targetSNI != clientHelloHost {
 		logger.Debug("Replacing SNI for %s with %s", host, targetSNI)
 	}
 
 	// 6. Connect to Remote
 	// Resolve IP
-	remoteIP, err := s.Resolver.Resolve(r.Context(), host)
+	clientIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+	remoteIP, err := s.Resolver.Resolve(r.Context(), host, net.ParseIP(clientIP))
 	if err != nil {
 		logger.Warn("DNS resolution failed for %s: %v", host, err)
 		return
@@ -191,7 +191,7 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 		ServerName:         targetSNI,
 		InsecureSkipVerify: true, // We verify manually
 	})
-	
+
 	// Perform handshake to ensure connection is good
 	if err := remoteConn.Handshake(); err != nil {
 		logger.Debug("Remote handshake failed for %s (SNI: %s): %v", host, targetSNI, err)
@@ -202,54 +202,50 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	// 7. Verify Remote Cert
 	// Determine policy
-	var policy interface{} = s.Config.CheckHostname // Default global policy
-	
-	// Check per-domain policy in cert_verify
-	// Check explicit match
-	if p, ok := s.Rules.CertVerify[host]; ok {
-		policy = p
-	} else {
-		// Check wildcard match
-		for k, v := range s.Rules.CertVerify {
-			if matched, _ := filepath.Match(k, host); matched {
-				policy = v
-				break
-			}
+	policy, ok := s.Rules.GetCertVerify(host)
+	if !ok {
+		policy = s.Config.CheckHostname // Default global policy
+	}
+
+	// If policy is explicitly false (bool or string "false"), skip verification
+	shouldVerify := true
+	switch v := policy.(type) {
+	case bool:
+		shouldVerify = v
+	case string:
+		if v == "false" {
+			shouldVerify = false
 		}
 	}
-	
-	// If policy is explicitly false (bool), skip verification
-	shouldVerify := true
-	if p, ok := policy.(bool); ok && !p {
-		shouldVerify = false
-	}
-	
+
 	if shouldVerify {
 		state := remoteConn.ConnectionState()
 		cert := state.PeerCertificates[0]
-		
+
 		verified := false
-		
+
 		if domains, ok := policy.([]interface{}); ok {
-			// Check if any domain in the list matches
+			logger.Debug("Policy is list for %s: %v", host, domains)
 			for _, d := range domains {
 				if dStr, ok := d.(string); ok {
-					if tlsutil.MatchHostname(cert, dStr, true) { 
+					match := tlsutil.MatchHostname(cert, dStr, true)
+					logger.Debug("Checking domain %s against cert: %v", dStr, match)
+					if match {
 						verified = true
 						break
 					}
 				}
 			}
 		} else {
-		    // No specific list, verify against original host or targetSNI?
-		    if tlsutil.MatchHostname(cert, host, policy) {
-		        verified = true
-		    }
+			logger.Debug("Policy is not list for %s: %v", host, policy)
+			if tlsutil.MatchHostname(cert, host, policy) {
+				verified = true
+			}
 		}
-		
+
 		if !verified {
-		    logger.Warn("Certificate verification failed for %s", host)
-		    return
+			logger.Warn("Certificate verification failed for %s. Cert domains: %v", host, cert.DNSNames)
+			return
 		}
 	}
 
@@ -270,14 +266,14 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	// We already have `defer remoteConn.Close()` (from dial) and `defer tlsClientConn.Close()` (from handshake).
 	// However, to be explicit and aggressive about unblocking:
 	io.Copy(tlsClientConn, remoteConn)
-	// Function return triggers defers.
 }
 
 func (s *ProxyServer) directTunnel(r *http.Request, clientConn net.Conn, host, port string) {
 	defer clientConn.Close()
 
 	// 1. Resolve IP
-	remoteIP, err := s.Resolver.Resolve(r.Context(), host)
+	clientIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+	remoteIP, err := s.Resolver.Resolve(r.Context(), host, net.ParseIP(clientIP))
 	if err != nil {
 		logger.Warn("DNS resolution failed for %s: %v", host, err)
 		return

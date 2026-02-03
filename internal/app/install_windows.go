@@ -34,6 +34,4 @@ func installServicePlatform(binPath string) {
 
 	logger.Info("Created scheduled task: %s", taskName)
 	logger.Info("Snirect will start automatically on login.")
-	fmt.Printf("\nSuccess! Binary installed at %s\n", binPath)
-	fmt.Println("To start now, run: snirect")
 }

@@ -8,9 +8,8 @@ import (
 func (cm *CertManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	host := hello.ServerName
 	if host == "" {
-		// Fallback or error? For a transparent proxy, SNI is crucial.
-		// If no SNI, we might not know which cert to serve.
-		// Return empty or root?
+		// If SNI is still missing, we can't generate a valid cert for "nothing".
+		// Returning nil causes "no certificates configured".
 		return nil, nil
 	}
 
@@ -34,5 +33,5 @@ func (cm *CertManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certific
 }
 
 func (cm *CertManager) GetRootCACertPEM() []byte {
-    return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cm.RootCert.Raw})
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cm.RootCert.Raw})
 }

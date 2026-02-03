@@ -62,6 +62,5 @@ func installServicePlatform(binPath string) {
 	}
 
 	logger.Info("Snirect installed and registered (auto-start enabled).")
-	fmt.Printf("\nSuccess! Binary installed at %s\n", binPath)
-	fmt.Println("To start the service now, run: launchctl start com.snirect.proxy")
+	logger.Info("Service file: %s", plistPath)
 }
