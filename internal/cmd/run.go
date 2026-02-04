@@ -101,7 +101,6 @@ func runProxy(cmd *cobra.Command) {
 
 	logger.Info("正在启动 Snirect...")
 	logger.Info("配置文件加载自: %s", appDir)
-	logger.Info("CA 已初始化。根证书: %s", caCertPath)
 
 	// Handle CA certificate installation based on importca setting
 	switch cfg.ImportCA {
