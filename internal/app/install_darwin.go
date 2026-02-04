@@ -24,7 +24,6 @@ func installServicePlatform(binPath string) error {
 	<key>ProgramArguments</key>
 	<array>
 		<string>%s</string>
-		<string>--set-proxy</string>
 	</array>
 	<key>RunAtLoad</key>
 	<false/>

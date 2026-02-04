@@ -22,7 +22,7 @@ func getBinPath() string {
 func installServicePlatform(binPath string) error {
 	taskName := "Snirect"
 
-	cmd := exec.Command("schtasks", "/Create", "/TN", taskName, "/TR", fmt.Sprintf(`"%s" --set-proxy`, binPath),
+	cmd := exec.Command("schtasks", "/Create", "/TN", taskName, "/TR", fmt.Sprintf(`"%s"`, binPath),
 		"/SC", "ONLOGON", "/RL", "HIGHEST", "/F")
 
 	output, err := cmd.CombinedOutput()

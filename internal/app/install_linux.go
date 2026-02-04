@@ -23,7 +23,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%s --set-proxy
+ExecStart=%s
 Restart=on-failure
 RestartSec=5s
 
