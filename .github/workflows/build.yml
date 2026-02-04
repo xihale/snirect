@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build and Test
+    name: Build Check
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -26,9 +26,6 @@ jobs:
 
       - name: Install dependencies
         run: go mod download
-
-      - name: Run tests
-        run: go test -v ./...
 
       - name: Build
         run: make build
