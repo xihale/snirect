@@ -43,8 +43,8 @@ clean-dist:
 
 # Cross-platform builds (parallel by default)
 cross-all:
-	@mkdir -p $(BUILD_DIR)
-	@$(MAKE) -j cross-linux-amd64 cross-linux-arm64 cross-darwin-amd64 cross-darwin-arm64 cross-windows-amd64 cross-windows-arm64
+	@chmod +x scripts/build-release.sh
+	./scripts/build-release.sh
 
 cross-linux-amd64:
 	GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 $(CMD_PATH)
