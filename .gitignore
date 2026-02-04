@@ -1,5 +1,8 @@
 # Binaries
-snirect
+/snirect
+snirect-linux-*
+snirect-darwin-*
+snirect-windows-*
 *.exe
 *.exe~
 *.dll

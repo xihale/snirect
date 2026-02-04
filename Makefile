@@ -16,7 +16,7 @@ release:
 	@mkdir -p $(BUILD_DIR)
 	go build -ldflags="-s -w" -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_PATH)
 
-# Build and run the internal install logic (Binary + Systemd)
+# Build and run the internal install logic
 install: build
 	./$(BUILD_DIR)/$(BINARY_NAME) install
 
@@ -37,25 +37,13 @@ clean:
 clean-dist:
 	rm -rf $(BUILD_DIR)
 
-# Cross-platform builds (parallel by default)
-cross-all:
-	@chmod +x scripts/build-release.sh
-	./scripts/build-release.sh
-
-cross-linux-amd64:
+# Simplified Cross-platform builds
+cross-all: clean
+	@mkdir -p $(BUILD_DIR)
 	GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 $(CMD_PATH)
-
-cross-linux-arm64:
 	GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 $(CMD_PATH)
-
-cross-darwin-amd64:
 	GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 $(CMD_PATH)
-
-cross-darwin-arm64:
 	GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 $(CMD_PATH)
-
-cross-windows-amd64:
 	GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe $(CMD_PATH)
-
-cross-windows-arm64:
 	GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" -o $(BUILD_DIR)/$(BINARY_NAME)-windows-arm64.exe $(CMD_PATH)
+	cd $(BUILD_DIR) && (sha256sum * > checksums.txt 2>/dev/null || shasum -a 256 * > checksums.txt 2>/dev/null || true)

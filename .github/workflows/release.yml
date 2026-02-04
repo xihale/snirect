@@ -19,8 +19,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -29,13 +27,11 @@ jobs:
           cache: true
 
       - name: Build and Package
-        run: |
-          make cross-all
+        run: make cross-all
 
       - name: Upload Assets to Release
         uses: softprops/action-gh-release@v2
         with:
-          # Use tag from release event or manual input
           tag_name: ${{ github.event.release.tag_name || inputs.tag_name }}
           files: |
             dist/*

@@ -9,10 +9,7 @@ on:
 jobs:
   build:
     name: Build Check
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -27,5 +24,5 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Build
-        run: make build
+      - name: Build All Platforms
+        run: make cross-all
