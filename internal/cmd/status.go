@@ -35,26 +35,26 @@ func printStatus() {
 	reset := "\033[0m"
 	bold := "\033[1m"
 
-	fmt.Printf("\n%s%sSnirect Status%s\n", bold, cyan, reset)
+	fmt.Printf("\n%s%sSnirect 运行状态%s\n", bold, cyan, reset)
 	fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 
 	// 1. Check configuration
 	appDir, err := config.GetAppDataDir()
 	if err != nil {
-		logger.Warn("Failed to get app directory: %v", err)
-		appDir = "unknown"
+		logger.Warn("获取配置目录失败: %v", err)
+		appDir = "未知"
 	}
 
 	configPath := filepath.Join(appDir, "config.toml")
 	cfg, cfgErr := config.LoadConfig(configPath)
 
-	fmt.Printf("%sConfiguration:%s\n", bold, reset)
-	fmt.Printf("  Config directory: %s%s%s\n", cyan, appDir, reset)
+	fmt.Printf("%s配置信息:%s\n", bold, reset)
+	fmt.Printf("  配置目录: %s%s%s\n", cyan, appDir, reset)
 	if cfgErr != nil {
-		fmt.Printf("  Config status: %s%s%s (using defaults)\n", yellow, "⚠ Not loaded", reset)
+		fmt.Printf("  配置状态: %s%s%s (正在使用默认设置)\n", yellow, "⚠ 加载失败", reset)
 	} else {
-		fmt.Printf("  Config status: %s%s%s\n", green, "✓ Loaded", reset)
-		fmt.Printf("  Server port: %s%d%s\n", cyan, cfg.Server.Port, reset)
+		fmt.Printf("  配置状态: %s%s%s\n", green, "✓ 已加载", reset)
+		fmt.Printf("  服务器端口: %s%d%s\n", cyan, cfg.Server.Port, reset)
 	}
 	fmt.Println()
 
@@ -62,53 +62,53 @@ func printStatus() {
 	certDir := filepath.Join(appDir, "certs")
 	caCertPath := filepath.Join(certDir, "root.crt")
 
-	fmt.Printf("%sCertificate:%s\n", bold, reset)
+	fmt.Printf("%s证书信息:%s\n", bold, reset)
 	if _, err := os.Stat(caCertPath); err == nil {
-		fmt.Printf("  CA file: %s%s%s\n", green, "✓ Exists", reset)
-		fmt.Printf("  Path: %s%s%s\n", cyan, caCertPath, reset)
+		fmt.Printf("  CA 文件: %s%s%s\n", green, "✓ 已存在", reset)
+		fmt.Printf("  路径: %s%s%s\n", cyan, caCertPath, reset)
 
 		// Check if installed in system
 		installed, err := sysproxy.CheckCertStatus(caCertPath)
 		if err != nil {
-			fmt.Printf("  System trust: %s%s%s (%v)\n", yellow, "⚠ Unknown", reset, err)
+			fmt.Printf("  系统信任: %s%s%s (%v)\n", yellow, "⚠ 未知", reset, err)
 		} else if installed {
-			fmt.Printf("  System trust: %s%s%s\n", green, "✓ Installed", reset)
+			fmt.Printf("  系统信任: %s%s%s\n", green, "✓ 已安装", reset)
 		} else {
-			fmt.Printf("  System trust: %s%s%s\n", red, "✗ Not installed", reset)
-			fmt.Printf("    Run: %ssnirect install-cert%s\n", yellow, reset)
+			fmt.Printf("  系统信任: %s%s%s\n", red, "✗ 未安装", reset)
+			fmt.Printf("    请运行: %ssnirect install-cert%s\n", yellow, reset)
 		}
 	} else {
-		fmt.Printf("  CA file: %s%s%s\n", red, "✗ Not found", reset)
-		fmt.Printf("    Run: %ssnirect%s to generate\n", yellow, reset)
+		fmt.Printf("  CA 文件: %s%s%s\n", red, "✗ 未找到", reset)
+		fmt.Printf("    请运行: %ssnirect%s 以生成证书\n", yellow, reset)
 	}
 	fmt.Println()
 
 	// 3. Check proxy
-	fmt.Printf("%sSystem Proxy:%s\n", bold, reset)
+	fmt.Printf("%s系统代理:%s\n", bold, reset)
 	if isProxySet() {
-		fmt.Printf("  Status: %s%s%s\n", green, "✓ Enabled", reset)
+		fmt.Printf("  状态: %s%s%s\n", green, "✓ 已启用", reset)
 		if cfg != nil {
 			pacURL := fmt.Sprintf("http://127.0.0.1:%d/pac/", cfg.Server.Port)
-			fmt.Printf("  PAC URL: %s%s%s\n", cyan, pacURL, reset)
+			fmt.Printf("  PAC 地址: %s%s%s\n", cyan, pacURL, reset)
 		}
 	} else {
-		fmt.Printf("  Status: %s%s%s\n", red, "✗ Not set", reset)
-		fmt.Printf("    Run: %ssnirect set-proxy%s\n", yellow, reset)
+		fmt.Printf("  状态: %s%s%s\n", red, "✗ 未设置", reset)
+		fmt.Printf("    请运行: %ssnirect set-proxy%s\n", yellow, reset)
 	}
 	fmt.Println()
 
 	// 4. Check service
-	fmt.Printf("%sService:%s\n", bold, reset)
+	fmt.Printf("%s服务状态:%s\n", bold, reset)
 	serviceStatus := checkServiceStatus()
-	fmt.Printf("  Status: %s\n", serviceStatus)
+	fmt.Printf("  状态: %s\n", serviceStatus)
 	fmt.Println()
 
 	// 5. Quick tips
-	fmt.Printf("%s%sQuick Commands:%s\n", bold, cyan, reset)
-	fmt.Printf("  Start proxy:    %ssnirect%s\n", yellow, reset)
-	fmt.Printf("  Install CA:       %ssnirect install-cert%s\n", yellow, reset)
-	fmt.Printf("  Set proxy:        %ssnirect set-proxy%s\n", yellow, reset)
-	fmt.Printf("  View logs:        %sjournalctl --user -u snirect -f%s (Linux)\n", yellow, reset)
+	fmt.Printf("%s%s快速命令:%s\n", bold, cyan, reset)
+	fmt.Printf("  启动代理:      %ssnirect%s\n", yellow, reset)
+	fmt.Printf("  安装 CA:       %ssnirect install-cert%s\n", yellow, reset)
+	fmt.Printf("  设置代理:      %ssnirect set-proxy%s\n", yellow, reset)
+	fmt.Printf("  查看日志:      %sjournalctl --user -u snirect -f%s (Linux)\n", yellow, reset)
 	fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 }
 
@@ -162,44 +162,44 @@ func checkServiceStatus() string {
 	switch runtime.GOOS {
 	case "linux":
 		if !sysproxy.HasTool("systemctl") {
-			return yellow + "⚠ Cannot check (systemctl not found)" + reset
+			return yellow + "⚠ 无法检查 (未找到 systemctl)" + reset
 		}
 		cmd := exec.Command("systemctl", "--user", "is-active", "snirect")
 		output, err := cmd.Output()
 		if err == nil && strings.TrimSpace(string(output)) == "active" {
-			return green + "✓ Running" + reset
+			return green + "✓ 正在运行" + reset
 		}
 		cmd = exec.Command("systemctl", "--user", "is-enabled", "snirect")
 		output, _ = cmd.Output()
 		if strings.TrimSpace(string(output)) == "enabled" {
-			return yellow + "⚡ Enabled (not running)" + reset
+			return yellow + "⚡ 已启用 (但未运行)" + reset
 		}
-		return red + "✗ Not installed" + reset
+		return red + "✗ 未安装" + reset
 
 	case "darwin":
 		if !sysproxy.HasTool("launchctl") {
-			return yellow + "⚠ Cannot check (launchctl not found)" + reset
+			return yellow + "⚠ 无法检查 (未找到 launchctl)" + reset
 		}
 		cmd := exec.Command("launchctl", "list")
 		output, err := cmd.Output()
 		if err == nil && strings.Contains(string(output), "com.snirect.proxy") {
-			return green + "✓ Running" + reset
+			return green + "✓ 正在运行" + reset
 		}
-		return red + "✗ Not installed" + reset
+		return red + "✗ 未安装" + reset
 
 	case "windows":
 		if !sysproxy.HasTool("schtasks") {
-			return yellow + "⚠ Cannot check (schtasks not found)" + reset
+			return yellow + "⚠ 无法检查 (未找到 schtasks)" + reset
 		}
 		cmd := exec.Command("schtasks", "/Query", "/TN", "Snirect")
 		_, err := cmd.Output()
 		if err == nil {
-			return green + "✓ Scheduled task exists" + reset
+			return green + "✓ 已创建计划任务" + reset
 		}
-		return red + "✗ Not installed" + reset
+		return red + "✗ 未安装" + reset
 
 	default:
-		return yellow + "⚠ Unknown platform" + reset
+		return yellow + "⚠ 未知平台" + reset
 	}
 }
 

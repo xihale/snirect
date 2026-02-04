@@ -4,6 +4,10 @@
 
 **Cross-Platform:** Linux · macOS · Windows
 
+## 📚 Dataset Source
+
+Domain rules and configuration data are sourced from [Cealing-Host](https://github.com/SpaceTimee/Cealing-Host).
+
 ---
 
 ## 🚀 Quick Start (Simple)
@@ -83,7 +87,7 @@ make install
 - **macOS:** Copies to `/usr/local/bin`, creates launchd service  
 - **Windows:** Copies to `%LOCALAPPDATA%\Programs\snirect`, creates scheduled task
 
-**Note:** CA certificate is auto-installed on first run (`snirect -s`) or you can manually run `snirect install-cert`.
+**注意:** 首次运行 (`snirect -s`) 会自动安装 CA 证书，也可以手动运行 `snirect install-cert`。安装证书后，你 **必须重启** 浏览器（如 Chrome, Firefox）或相关应用，代理才能正常生效。
 
 ### Running Methods
 
@@ -204,7 +208,8 @@ Some rules (Google/YouTube) use third-party public proxy IPs that require `check
 
 | Issue | Solution |
 |:--|:--|
-| "Certificate warnings in browser" | Run `snirect install-cert` |
+| "Certificate warnings in browser" | 运行 `snirect install-cert` 并重启浏览器 |
+| "tls: unknown certificate" | CA 证书安装失败或缓存未刷新。请尝试重启应用，或检查系统证书管理器中是否存在相应证书。 |
 | "Port already in use" | Change `server.port` in config.toml |
 | "Proxy not working" | Run `snirect status` to check |
 | "Can't access some sites" | Check `rules.toml` or run `make update-rules` |

@@ -8,9 +8,9 @@ import (
 func (cm *CertManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	host := hello.ServerName
 	if host == "" {
-		// If SNI is still missing, we can't generate a valid cert for "nothing".
-		// Returning nil causes "no certificates configured".
-		return nil, nil
+		// If SNI is missing, fallback to a generic name to avoid "no certificates configured" error.
+		// This happens for direct IP access or legacy clients.
+		host = "snirect.local"
 	}
 
 	if cert, ok := cm.certCache.Load(host); ok {

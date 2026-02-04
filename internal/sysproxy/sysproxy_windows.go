@@ -24,29 +24,29 @@ func checkEnvPlatform(env map[string]string) {
 	}
 }
 
-func installCertPlatform(certPath string) error {
+func installCertPlatform(certPath string) (bool, error) {
 	logger.Info("Attempting to install certificate: %s", certPath)
 
 	certData, err := os.ReadFile(certPath)
 	if err != nil {
-		return fmt.Errorf("failed to read certificate: %v", err)
+		return false, fmt.Errorf("failed to read certificate: %v", err)
 	}
 
 	if isCertInstalled(certData) {
 		logger.Info("Certificate already installed in system trust store")
-		return nil
+		return false, nil
 	}
 
 	cmd := exec.Command("certutil", "-addstore", "-user", "Root", certPath)
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
-		return fmt.Errorf("failed to install certificate: %v, output: %s", err, string(output))
+		return false, fmt.Errorf("failed to install certificate: %v, output: %s", err, string(output))
 	}
 
 	logger.Info("Certificate installed successfully!")
 	logger.Info("Output: %s", string(output))
-	return nil
+	return true, nil
 }
 
 func isCertInstalled(certData []byte) bool {
@@ -70,7 +70,7 @@ func isCertInstalled(certData []byte) bool {
 	return strings.Contains(string(output), "Snirect Root CA")
 }
 
-func forceInstallCertPlatform(certPath string) error {
+func forceInstallCertPlatform(certPath string) (bool, error) {
 	logger.Info("Force installing certificate: %s", certPath)
 
 	uninstallCertPlatform(certPath)

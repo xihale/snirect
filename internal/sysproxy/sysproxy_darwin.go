@@ -27,17 +27,17 @@ func checkEnvPlatform(env map[string]string) {
 	}
 }
 
-func installCertPlatform(certPath string) error {
+func installCertPlatform(certPath string) (bool, error) {
 	logger.Info("Attempting to install certificate: %s", certPath)
 
 	certData, err := os.ReadFile(certPath)
 	if err != nil {
-		return fmt.Errorf("failed to read certificate: %v", err)
+		return false, fmt.Errorf("failed to read certificate: %v", err)
 	}
 
 	if isCertInstalled(certData) {
 		logger.Info("Certificate already installed in system trust store")
-		return nil
+		return false, nil
 	}
 
 	keychainPath := os.ExpandEnv("$HOME/Library/Keychains/login.keychain-db")
@@ -49,12 +49,11 @@ func installCertPlatform(certPath string) error {
 	logger.Info("Running: security add-trusted-cert -d -r trustRoot -k %s %s", keychainPath, certPath)
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to install certificate: %v (you may need to manually trust the certificate in Keychain Access)", err)
+		return false, fmt.Errorf("failed to install certificate: %v (you may need to manually trust the certificate in Keychain Access)", err)
 	}
 
 	logger.Info("Certificate installed successfully!")
-	logger.Info("Note: You may need to restart applications for changes to take effect.")
-	return nil
+	return true, nil
 }
 
 func isCertInstalled(certData []byte) bool {
@@ -80,7 +79,7 @@ func isCertInstalled(certData []byte) bool {
 	return false
 }
 
-func forceInstallCertPlatform(certPath string) error {
+func forceInstallCertPlatform(certPath string) (bool, error) {
 	logger.Info("Force installing certificate: %s", certPath)
 
 	uninstallCertPlatform(certPath)

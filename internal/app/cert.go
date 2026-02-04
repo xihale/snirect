@@ -12,7 +12,7 @@ import (
 // SetupCA initializes the CA (generating if missing) and optionally installs it to the system trust store.
 func SetupCA(installToSystem bool) error {
 	logger.Info("Initializing Certificate Authority...")
-	
+
 	appDir, err := config.EnsureConfig(false)
 	if err != nil {
 		return err
@@ -21,7 +21,7 @@ func SetupCA(installToSystem bool) error {
 	if err := os.MkdirAll(certDir, 0700); err != nil {
 		return err
 	}
-	
+
 	caCertPath := filepath.Join(certDir, "root.crt")
 	caKeyPath := filepath.Join(certDir, "root.key")
 
@@ -29,13 +29,18 @@ func SetupCA(installToSystem bool) error {
 	if _, err := ca.NewCertManager(caCertPath, caKeyPath); err != nil {
 		return err
 	}
-	
+
 	if installToSystem {
 		logger.Info("Installing Root CA to system trust store (requires sudo)...")
-		if err := sysproxy.InstallCert(caCertPath); err != nil {
+		installed, err := sysproxy.InstallCert(caCertPath)
+		if err != nil {
 			return err
 		}
+		if installed {
+			logger.Info("Root CA 安装成功！")
+			logger.Info("重要提示：请重启浏览器或相关应用，以使证书生效。")
+		}
 	}
-	
+
 	return nil
 }

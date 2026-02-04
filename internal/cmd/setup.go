@@ -31,9 +31,9 @@ To check if already installed: snirect cert-status`,
   snirect cert-status      # Check if installed`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := app.SetupCA(true); err != nil {
-			logger.Fatal("Failed to install certificate: %v\n\nTry running with sudo/administrator privileges.", err)
+			logger.Fatal("安装证书失败: %v\n\n请尝试以 sudo 或管理员权限运行。", err)
 		}
-		fmt.Println("✓ Root CA installed successfully!")
+		fmt.Println("✓ Root CA 安装成功！")
 	},
 }
 
@@ -62,9 +62,9 @@ To remove proxy: snirect unset-proxy`,
 		cfg, _ := config.LoadConfig(filepath.Join(appDir, "config.toml"))
 		pacURL := fmt.Sprintf("http://127.0.0.1:%d/pac/?t=%d", cfg.Server.Port, time.Now().Unix())
 		sysproxy.SetPAC(pacURL)
-		fmt.Println("✓ System proxy configured.")
-		fmt.Printf("  PAC URL: %s\n", pacURL)
-		fmt.Println("\nNote: Some applications may need to be restarted.")
+		fmt.Println("✓ 系统代理配置成功。")
+		fmt.Printf("  PAC 地址: %s\n", pacURL)
+		fmt.Println("\n注意: 某些应用可能需要重启才能生效。")
 	},
 }
 
@@ -83,8 +83,8 @@ This clears the PAC (Proxy Auto-Config) URL from:
   snirect up               # Short alias`,
 	Run: func(cmd *cobra.Command, args []string) {
 		sysproxy.ClearPAC()
-		fmt.Println("✓ System proxy cleared.")
-		fmt.Println("Your system will now connect directly to the internet.")
+		fmt.Println("✓ 系统代理已清除。")
+		fmt.Println("您的系统现在将直接连接到互联网。")
 	},
 }
 
@@ -104,11 +104,11 @@ Your certificates in the certs/ directory will NOT be affected.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		appDir, err := config.EnsureConfig(true)
 		if err != nil {
-			logger.Fatal("Failed to reset config: %v", err)
+			logger.Fatal("重置配置失败: %v", err)
 		}
-		fmt.Println("✓ Configuration reset to defaults.")
-		fmt.Printf("  Config location: %s\n", appDir)
-		fmt.Println("\nNote: Your certificates in certs/ were preserved.")
+		fmt.Println("✓ 配置文件已重置为默认值。")
+		fmt.Printf("  配置目录: %s\n", appDir)
+		fmt.Println("\n注意: 您的证书文件 (certs/ 目录下) 已被保留。")
 	},
 }
 
@@ -147,14 +147,14 @@ Checks:
 		}
 
 		if installed {
-			fmt.Println("Status: Root CA is installed in system trust store")
-			fmt.Printf("Certificate path: %s\n", caCertPath)
-			fmt.Println("\n✓ Browsers should trust Snirect's HTTPS certificates.")
+			fmt.Println("状态: 根 CA 已安装在系统信任库中")
+			fmt.Printf("证书路径: %s\n", caCertPath)
+			fmt.Println("\n✓ 浏览器现在应该信任 Snirect 的 HTTPS 证书。")
 		} else {
-			fmt.Println("Status: Root CA is NOT installed in system trust store")
-			fmt.Printf("Certificate path: %s\n", caCertPath)
-			fmt.Println("\n⚠ Browsers will show certificate warnings for HTTPS sites.")
-			fmt.Println("\nTo install, run: snirect install-cert")
+			fmt.Println("状态: 根 CA 尚未安装在系统信任库中")
+			fmt.Printf("证书路径: %s\n", caCertPath)
+			fmt.Println("\n⚠ 浏览器访问 HTTPS 网站时会显示证书警告。")
+			fmt.Println("\n要进行安装，请运行: snirect install-cert")
 		}
 	},
 }
@@ -184,9 +184,9 @@ To check current status: snirect cert-status`,
 		caCertPath := filepath.Join(certDir, "root.crt")
 
 		if err := sysproxy.UninstallCert(caCertPath); err != nil {
-			logger.Fatal("Failed to uninstall certificate: %v\n\nYou may need to manually remove it via your system's certificate manager.", err)
+			logger.Fatal("卸载证书失败: %v\n\n您可能需要手动通过系统的证书管理器将其删除。", err)
 		}
-		fmt.Println("✓ Root CA removed from system trust store.")
+		fmt.Println("✓ 根 CA 已从系统信任库中移除。")
 	},
 }
 

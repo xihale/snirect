@@ -14,15 +14,17 @@ func CheckEnv() map[string]string {
 }
 
 // InstallCert attempts to install the CA certificate to the system trust store.
-// Skips installation if certificate is already present.
+// Returns (true, nil) if certificate was newly installed.
+// Returns (false, nil) if certificate was already present.
 // Platform-specific implementations in sysproxy_*.go files.
-func InstallCert(certPath string) error {
+func InstallCert(certPath string) (bool, error) {
 	return installCertPlatform(certPath)
 }
 
 // ForceInstallCert forces installation of the CA certificate even if already present.
+// Returns (true, nil) if successful.
 // Platform-specific implementations in sysproxy_*.go files.
-func ForceInstallCert(certPath string) error {
+func ForceInstallCert(certPath string) (bool, error) {
 	return forceInstallCertPlatform(certPath)
 }
 

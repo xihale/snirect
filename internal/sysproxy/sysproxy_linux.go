@@ -34,17 +34,17 @@ func checkEnvPlatform(env map[string]string) {
 	}
 }
 
-func installCertPlatform(certPath string) error {
+func installCertPlatform(certPath string) (bool, error) {
 	logger.Info("Attempting to install certificate: %s", certPath)
 
 	certData, err := os.ReadFile(certPath)
 	if err != nil {
-		return fmt.Errorf("failed to read certificate: %v", err)
+		return false, fmt.Errorf("failed to read certificate: %v", err)
 	}
 
 	if isCertInstalled(certData) {
 		logger.Info("Certificate already installed in system trust store")
-		return nil
+		return false, nil
 	}
 
 	var destPath string
@@ -56,7 +56,10 @@ func installCertPlatform(certPath string) error {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		logger.Info("Running: sudo %s anchor --store %s", path, certPath)
-		return cmd.Run()
+		if err := cmd.Run(); err != nil {
+			return false, err
+		}
+		return true, nil
 	} else if path, err := exec.LookPath("update-ca-certificates"); err == nil {
 		destPath = "/usr/local/share/ca-certificates/snirect-root.crt"
 		updateCmd = path
@@ -64,7 +67,7 @@ func installCertPlatform(certPath string) error {
 		destPath = "/etc/pki/ca-trust/source/anchors/snirect-root.crt"
 		updateCmd = path
 	} else {
-		return fmt.Errorf("could not detect certificate management tool (trust, update-ca-certificates, or update-ca-trust)")
+		return false, fmt.Errorf("could not detect certificate management tool (trust, update-ca-certificates, or update-ca-trust)")
 	}
 
 	logger.Info("Copying certificate to %s...", destPath)
@@ -72,7 +75,7 @@ func installCertPlatform(certPath string) error {
 	cpCmd.Stdout = os.Stdout
 	cpCmd.Stderr = os.Stderr
 	if err := cpCmd.Run(); err != nil {
-		return fmt.Errorf("failed to copy certificate: %v", err)
+		return false, fmt.Errorf("failed to copy certificate: %v", err)
 	}
 
 	logger.Info("Updating trust store using %s...", updateCmd)
@@ -81,11 +84,11 @@ func installCertPlatform(certPath string) error {
 	upCmd.Stdout = os.Stdout
 	upCmd.Stderr = os.Stderr
 	if err := upCmd.Run(); err != nil {
-		return fmt.Errorf("failed to update trust store: %v", err)
+		return false, fmt.Errorf("failed to update trust store: %v", err)
 	}
 
 	logger.Info("Certificate installed successfully!")
-	return nil
+	return true, nil
 }
 
 func isCertInstalled(certData []byte) bool {
@@ -113,7 +116,7 @@ func isCertInstalled(certData []byte) bool {
 	return false
 }
 
-func forceInstallCertPlatform(certPath string) error {
+func forceInstallCertPlatform(certPath string) (bool, error) {
 	logger.Info("Force installing certificate: %s", certPath)
 
 	uninstallCertPlatform(certPath)

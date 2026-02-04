@@ -79,8 +79,14 @@ func runProxy(cmd *cobra.Command) {
 	// Init Logger
 	logger.SetLevel(cfg.Log.Level)
 	if cfg.Log.File != "" {
-		if err := logger.SetOutput(cfg.Log.File); err != nil {
+		logPath := cfg.Log.File
+		if !filepath.IsAbs(logPath) {
+			logPath = filepath.Join(appDir, logPath)
+		}
+		if err := logger.SetOutput(logPath); err != nil {
 			fmt.Printf("Failed to set log file: %v\n", err)
+		} else {
+			logger.Info("日志文件路径: %s", logPath)
 		}
 	}
 
@@ -93,32 +99,41 @@ func runProxy(cmd *cobra.Command) {
 		logger.Fatal("Failed to initialize CA: %v", err)
 	}
 
-	logger.Info("Starting Snirect...")
-	logger.Info("Config loaded from: %s", appDir)
-	logger.Info("CA initialized. Root cert: %s", caCertPath)
+	logger.Info("正在启动 Snirect...")
+	logger.Info("配置文件加载自: %s", appDir)
+	logger.Info("CA 已初始化。根证书: %s", caCertPath)
 
 	// Handle CA certificate installation based on importca setting
 	switch cfg.ImportCA {
 	case "never":
-		logger.Info("CA auto-installation disabled (importca = never)")
+		logger.Info("CA 自动安装已禁用 (importca = never)")
 	case "always":
-		logger.Info("Forcing CA certificate re-installation (importca = always)...")
-		if err := sysproxy.ForceInstallCert(caCertPath); err != nil {
+		logger.Info("正在强制重新安装 CA 证书 (importca = always)...")
+		installed, err := sysproxy.ForceInstallCert(caCertPath)
+		if err != nil {
 			logger.Warn("Failed to install root CA: %v", err)
 			logger.Warn("You may need to install the certificate manually: %s", caCertPath)
+		} else if installed {
+			logger.Info("Root CA 重新安装成功！请重启浏览器以生效。")
 		}
 	case "auto", "":
-		logger.Info("Checking if root CA is installed in system trust store (importca = auto)...")
-		if err := sysproxy.InstallCert(caCertPath); err != nil {
-			logger.Warn("Failed to install root CA: %v", err)
-			logger.Warn("You may need to install the certificate manually: %s", caCertPath)
+		logger.Info("正在检查根 CA 是否已安装 (importca = auto)...")
+		installed, err := sysproxy.InstallCert(caCertPath)
+		if err != nil {
+			logger.Warn("安装根 CA 失败: %v", err)
+			logger.Warn("你可能需要手动安装证书: %s", caCertPath)
+		} else if installed {
+			logger.Info("Root CA 安装成功！请重启浏览器以生效。")
 		}
 	default:
-		logger.Warn("Invalid importca value: %q. Expected: auto, always, or never. Treating as auto.", cfg.ImportCA)
-		logger.Info("Checking if root CA is installed in system trust store...")
-		if err := sysproxy.InstallCert(caCertPath); err != nil {
-			logger.Warn("Failed to install root CA: %v", err)
-			logger.Warn("You may need to install the certificate manually: %s", caCertPath)
+		logger.Warn("无效的 importca 值: %q。预期为: auto, always, 或 never。按 auto 处理。", cfg.ImportCA)
+		logger.Info("正在检查根 CA 是否已安装...")
+		installed, err := sysproxy.InstallCert(caCertPath)
+		if err != nil {
+			logger.Warn("安装根 CA 失败: %v", err)
+			logger.Warn("你可能需要手动安装证书: %s", caCertPath)
+		} else if installed {
+			logger.Info("Root CA 安装成功！请重启浏览器以生效。")
 		}
 	}
 
@@ -151,7 +166,7 @@ func runProxy(cmd *cobra.Command) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	<-c
-	logger.Info("Shutting down...")
+	logger.Info("正在关机...")
 }
 
 func printUsageInfo(port int) {
@@ -162,10 +177,10 @@ func printUsageInfo(port int) {
 	reset := "\033[0m"
 
 	fmt.Printf("\n%s%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", bold, cyan, reset)
-	fmt.Printf(" %sSnirect%s is running on port %s%d%s\n", bold, reset, green, port, reset)
+	fmt.Printf(" %sSnirect%s 正在运行，端口: %s%d%s\n", bold, reset, green, port, reset)
 	fmt.Printf("%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", cyan, reset)
-	fmt.Printf(" %sQuick Setup:%s\n", yellow, reset)
-	fmt.Printf("   - Use system proxy:  %ssnirect set-proxy%s\n", green, reset)
-	fmt.Printf("   - Current terminal:  %seval $(snirect proxy-env)%s\n", green, reset)
+	fmt.Printf(" %s快速设置:%s\n", yellow, reset)
+	fmt.Printf("   - 启用系统代理:    %ssnirect set-proxy%s\n", green, reset)
+	fmt.Printf("   - 当前终端代理:    %seval $(snirect proxy-env)%s\n", green, reset)
 	fmt.Printf("%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n\n", cyan, reset)
 }
