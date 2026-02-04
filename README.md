@@ -155,9 +155,9 @@ snirect uninstall-cert   # Remove CA certificate
 | `status` | — | Check proxy/CA/service status |
 | `set-proxy` | `sp` | Enable system proxy |
 | `unset-proxy` | `up` | Disable system proxy |
-| `install-cert` | `ic` | Install root CA |
-| `uninstall-cert` | `uc` | Remove root CA |
-| `cert-status` | `cs` | Check CA installation |
+| `install-cert` | `ic`, `install-ca` | Install root CA |
+| `uninstall-cert` | `uc`, `uninstall-ca` | Remove root CA |
+| `cert-status` | `cs`, `ca-status` | Check CA installation |
 | `proxy-env` | — | Print shell proxy settings |
 | `reset-config` | — | Reset config to defaults |
 | `completion` | — | Shell completion scripts |
