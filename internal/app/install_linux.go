@@ -35,19 +35,18 @@ WantedBy=default.target
 	servicePath := filepath.Join(systemdDir, "snirect.service")
 
 	if err := os.MkdirAll(systemdDir, 0755); err != nil {
-		logger.Fatal("Failed to create systemd directory: %v", err)
+		logger.Fatal("创建 systemd 目录失败: %v", err)
 	}
 
 	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
-		logger.Fatal("Failed to write service file: %v", err)
+		logger.Fatal("写入服务文件失败: %v", err)
 	}
-	logger.Info("Created systemd service file at: %s", servicePath)
+	logger.Info("已创建 systemd 服务文件: %s", servicePath)
 
 	runSystemctl("daemon-reload")
 	runSystemctl("enable", "snirect")
 
-	logger.Info("Snirect installed and registered (auto-start enabled).")
-	logger.Info("Service file: %s", servicePath)
+	logger.Info("Snirect 安装成功并已注册（开机自启已启用）。")
 }
 
 func runSystemctl(args ...string) {

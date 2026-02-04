@@ -16,19 +16,19 @@ import (
 var installCertCmd = &cobra.Command{
 	Use:     "install-cert",
 	Aliases: []string{"install-ca", "ic"},
-	Short:   "Install root CA to system trust store",
-	Long: `Install the root CA certificate to system trust store.
-This certificate is required for HTTPS proxying to work.
+	Short:   "安装根 CA 到系统信任库",
+	Long: `将根 CA 证书安装到系统信任库中。
+这是实现 HTTPS 代理所必需的步骤。
 
-Platform-specific details:
-  - Linux: Uses trust, update-ca-certificates, or update-ca-trust (requires sudo)
-  - macOS: Uses security add-trusted-cert (requires confirmation)
-  - Windows: Uses certutil -addstore (requires Administrator)
+平台特定细节：
+  - Linux: 使用 trust, update-ca-certificates 或 update-ca-trust (需要 sudo)
+  - macOS: 使用 security add-trusted-cert (需要确认)
+  - Windows: 使用 certutil -addstore (需要管理员权限)
 
-To check if already installed: snirect cert-status`,
-	Example: `  snirect install-cert     # Install CA certificate
-  snirect ic               # Short alias
-  snirect cert-status      # Check if installed`,
+查看安装状态：snirect cert-status`,
+	Example: `  snirect install-cert     # 安装 CA 证书
+  snirect ic               # 简写
+  snirect cert-status      # 检查是否已安装`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := app.SetupCA(true); err != nil {
 			logger.Fatal("安装证书失败: %v\n\n请尝试以 sudo 或管理员权限运行。", err)
@@ -40,20 +40,20 @@ To check if already installed: snirect cert-status`,
 var setProxyCmd = &cobra.Command{
 	Use:     "set-proxy",
 	Aliases: []string{"sp"},
-	Short:   "Set system proxy PAC URL",
-	Long: `Configure system-wide proxy settings using PAC (Proxy Auto-Config).
-This tells your system to use Snirect for web browsing.
+	Short:   "设置系统代理 PAC 地址",
+	Long: `使用 PAC (代理自动配置) 配置系统范围的代理设置。
+这会告诉您的系统使用 Snirect 进行网页浏览。
 
-Platform-specific details:
-  - Linux: gsettings (GNOME) or kwriteconfig5 (KDE)
-  - macOS: networksetup (all network interfaces)
-  - Windows: Registry (AutoConfigURL)
+平台特定细节：
+  - Linux: gsettings (GNOME) 或 kwriteconfig5 (KDE)
+  - macOS: networksetup (所有网络接口)
+  - Windows: 注册表 (AutoConfigURL)
 
-To verify proxy is set: snirect status
-To remove proxy: snirect unset-proxy`,
-	Example: `  snirect set-proxy        # Enable system proxy
-  snirect sp               # Short alias
-  snirect status           # Verify proxy is active`,
+验证代理是否设置：snirect status
+清除代理：snirect unset-proxy`,
+	Example: `  snirect set-proxy        # 启用系统代理
+  snirect sp               # 简写
+  snirect status           # 验证代理是否活跃`,
 	Run: func(cmd *cobra.Command, args []string) {
 		appDir, err := config.EnsureConfig(false)
 		if err != nil {
@@ -71,16 +71,16 @@ To remove proxy: snirect unset-proxy`,
 var unsetProxyCmd = &cobra.Command{
 	Use:     "unset-proxy",
 	Aliases: []string{"up"},
-	Short:   "Clear system proxy settings",
-	Long: `Remove system-wide proxy configuration.
-Use this when you want to stop using Snirect or switch to another proxy.
+	Short:   "清除系统代理设置",
+	Long: `移除系统范围的代理配置。
+当您想停止使用 Snirect 或切换到其他代理时使用此命令。
 
-This clears the PAC (Proxy Auto-Config) URL from:
-  - Linux: gsettings (GNOME) or kwriteconfig5 (KDE)
-  - macOS: networksetup (all network interfaces)
-  - Windows: Registry (AutoConfigURL)`,
-	Example: `  snirect unset-proxy      # Disable system proxy
-  snirect up               # Short alias`,
+这将从以下位置清除 PAC (代理自动配置) 地址：
+  - Linux: gsettings (GNOME) 或 kwriteconfig5 (KDE)
+  - macOS: networksetup (所有网络接口)
+  - Windows: 注册表 (AutoConfigURL)`,
+	Example: `  snirect unset-proxy      # 禁用系统代理
+  snirect up               # 简写`,
 	Run: func(cmd *cobra.Command, args []string) {
 		sysproxy.ClearPAC()
 		fmt.Println("✓ 系统代理已清除。")
@@ -90,17 +90,17 @@ This clears the PAC (Proxy Auto-Config) URL from:
 
 var resetConfigCmd = &cobra.Command{
 	Use:   "reset-config",
-	Short: "Reset configuration files to defaults",
-	Long: `Reset all configuration files to their default values.
-WARNING: This will overwrite your custom settings!
+	Short: "将配置文件重置为默认值",
+	Long: `将所有配置文件重置为默认值。
+警告：这将覆盖您的自定义设置！
 
-Files affected:
-  - config.toml (main configuration)
-  - rules.toml (SNI bypass rules)
-  - pac (proxy auto-config script)
+受影响的文件：
+  - config.toml (主配置)
+  - rules.toml (SNI 分流规则)
+  - pac (代理自动配置脚本)
 
-Your certificates in the certs/ directory will NOT be affected.`,
-	Example: `  snirect reset-config       # Reset to defaults`,
+您的证书文件 (certs/ 目录下) 不会受到影响。`,
+	Example: `  snirect reset-config       # 重置为默认设置`,
 	Run: func(cmd *cobra.Command, args []string) {
 		appDir, err := config.EnsureConfig(true)
 		if err != nil {
@@ -115,16 +115,16 @@ Your certificates in the certs/ directory will NOT be affected.`,
 var certStatusCmd = &cobra.Command{
 	Use:     "cert-status",
 	Aliases: []string{"ca-status", "cs"},
-	Short:   "Check if root CA is installed in system trust store",
-	Long: `Check the installation status of the Snirect root CA certificate.
-This helps diagnose HTTPS connectivity issues.
+	Short:   "检查根 CA 是否已安装在系统信任库中",
+	Long: `检查 Snirect 根 CA 证书的安装状态。
+这有助于诊断 HTTPS 连接问题。
 
-Checks:
-  - Linux: /usr/local/share/ca-certificates/, /etc/pki/ca-trust/, and trust store
-  - macOS: login.keychain for "Snirect Root CA"
-  - Windows: User certificate store (Root) for "Snirect Root CA"`,
-	Example: `  snirect cert-status      # Check CA installation
-  snirect cs               # Short alias`,
+检查项：
+  - Linux: /usr/local/share/ca-certificates/, /etc/pki/ca-trust/ 以及信任库
+  - macOS: 登录钥匙串中的 "Snirect Root CA"
+  - Windows: 用户证书存储 (Root) 中的 "Snirect Root CA"`,
+	Example: `  snirect cert-status      # 检查 CA 安装状态
+  snirect cs               # 简写`,
 	Run: func(cmd *cobra.Command, args []string) {
 		appDir, err := config.EnsureConfig(false)
 		if err != nil {
@@ -162,18 +162,18 @@ Checks:
 var uninstallCertCmd = &cobra.Command{
 	Use:     "uninstall-cert",
 	Aliases: []string{"uninstall-ca", "uc"},
-	Short:   "Remove root CA from system trust store",
-	Long: `Remove the Snirect root CA certificate from system trust store.
-Use this when uninstalling Snirect or if you want to stop trusting its certificates.
+	Short:   "从系统信任库移除根 CA",
+	Long: `从系统信任库中移除 Snirect 根 CA 证书。
+当您卸载 Snirect 或想停止信任其证书时使用此命令。
 
-Platform-specific details:
-  - Linux: Removes from /usr/local/share/ca-certificates/, /etc/pki/ca-trust/, and trust store
-  - macOS: Removes from login.keychain
-  - Windows: Removes from user certificate store (Root)
+平台特定细节：
+  - Linux: 从 /usr/local/share/ca-certificates/, /etc/pki/ca-trust/ 和信任库中移除
+  - macOS: 从登录钥匙串中移除
+  - Windows: 从用户证书存储 (Root) 中移除
 
-To check current status: snirect cert-status`,
-	Example: `  snirect uninstall-cert   # Remove CA certificate
-  snirect uc               # Short alias`,
+查看当前状态：snirect cert-status`,
+	Example: `  snirect uninstall-cert   # 移除 CA 证书
+  snirect uc               # 简写`,
 	Run: func(cmd *cobra.Command, args []string) {
 		appDir, err := config.EnsureConfig(false)
 		if err != nil {

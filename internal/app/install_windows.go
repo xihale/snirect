@@ -27,11 +27,11 @@ func installServicePlatform(binPath string) {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		logger.Warn("Failed to create scheduled task: %v, output: %s", err, string(output))
-		logger.Info("You can manually create a startup task or run snirect at login.")
+		logger.Warn("创建计划任务失败: %v, 输出: %s", err, string(output))
+		logger.Info("您可以手动创建启动任务或在登录时运行 snirect。")
 		return
 	}
 
-	logger.Info("Created scheduled task: %s", taskName)
-	logger.Info("Snirect will start automatically on login.")
+	logger.Info("已创建计划任务: %s", taskName)
+	logger.Info("Snirect 将在登录时自动启动。")
 }

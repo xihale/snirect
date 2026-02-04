@@ -25,27 +25,25 @@ func checkEnvPlatform(env map[string]string) {
 }
 
 func installCertPlatform(certPath string) (bool, error) {
-	logger.Info("Attempting to install certificate: %s", certPath)
-
 	certData, err := os.ReadFile(certPath)
 	if err != nil {
-		return false, fmt.Errorf("failed to read certificate: %v", err)
+		return false, fmt.Errorf("读取证书失败: %v", err)
 	}
 
 	if isCertInstalled(certData) {
-		logger.Info("Certificate already installed in system trust store")
+		logger.Info("根证书已安装在系统信任库中")
 		return false, nil
 	}
 
+	logger.Info("正在安装证书: %s", certPath)
 	cmd := exec.Command("certutil", "-addstore", "-user", "Root", certPath)
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
-		return false, fmt.Errorf("failed to install certificate: %v, output: %s", err, string(output))
+		return false, fmt.Errorf("安装证书失败: %v, 输出: %s", err, string(output))
 	}
 
-	logger.Info("Certificate installed successfully!")
-	logger.Info("Output: %s", string(output))
+	logger.Info("证书安装成功！")
 	return true, nil
 }
 
@@ -71,14 +69,14 @@ func isCertInstalled(certData []byte) bool {
 }
 
 func forceInstallCertPlatform(certPath string) (bool, error) {
-	logger.Info("Force installing certificate: %s", certPath)
+	logger.Info("正在强制安装证书: %s", certPath)
 
 	uninstallCertPlatform(certPath)
 	return installCertPlatform(certPath)
 }
 
 func uninstallCertPlatform(certPath string) error {
-	logger.Info("Attempting to uninstall certificate from Windows certificate store")
+	logger.Info("正在尝试卸载证书")
 
 	cmd := exec.Command("certutil", "-user", "-delstore", "Root", "Snirect Root CA")
 	output, err := cmd.CombinedOutput()
@@ -86,20 +84,20 @@ func uninstallCertPlatform(certPath string) error {
 	if err != nil {
 		outputStr := string(output)
 		if strings.Contains(outputStr, "not found") || strings.Contains(outputStr, "No certificates") {
-			logger.Info("Certificate was not found in Windows certificate store")
+			logger.Info("未找到证书")
 			return nil
 		}
-		return fmt.Errorf("failed to uninstall certificate: %v, output: %s", err, outputStr)
+		return fmt.Errorf("卸载证书失败: %v, 输出: %s", err, outputStr)
 	}
 
-	logger.Info("Certificate uninstalled successfully from Windows certificate store!")
+	logger.Info("证书卸载成功！")
 	return nil
 }
 
 func checkCertStatusPlatform(certPath string) (bool, error) {
 	certData, err := os.ReadFile(certPath)
 	if err != nil {
-		return false, fmt.Errorf("failed to read certificate: %v", err)
+		return false, fmt.Errorf("读取证书失败: %v", err)
 	}
 
 	installed := isCertInstalled(certData)
@@ -107,42 +105,42 @@ func checkCertStatusPlatform(certPath string) (bool, error) {
 }
 
 func setPACPlatform(pacURL string) {
-	logger.Info("Setting system proxy to: %s", pacURL)
+	logger.Info("正在将系统代理设置为: %s", pacURL)
 
 	key, err := registry.OpenKey(registry.CURRENT_USER,
 		`Software\Microsoft\Windows\CurrentVersion\Internet Settings`,
 		registry.SET_VALUE)
 	if err != nil {
-		logger.Warn("Failed to open registry key: %v", err)
+		logger.Warn("打开注册表失败: %v", err)
 		return
 	}
 	defer key.Close()
 
 	if err := key.SetStringValue("AutoConfigURL", pacURL); err != nil {
-		logger.Warn("Failed to set AutoConfigURL: %v", err)
+		logger.Warn("设置 AutoConfigURL 失败: %v", err)
 		return
 	}
 
-	logger.Info("Proxy set successfully. You may need to restart applications for changes to take effect.")
+	logger.Info("系统代理设置成功。部分应用可能需要重启才能生效。")
 }
 
 func clearPACPlatform() {
-	logger.Info("Clearing system proxy settings...")
+	logger.Info("正在清除系统代理设置...")
 
 	key, err := registry.OpenKey(registry.CURRENT_USER,
 		`Software\Microsoft\Windows\CurrentVersion\Internet Settings`,
 		registry.SET_VALUE)
 	if err != nil {
-		logger.Debug("Failed to open registry key: %v", err)
+		logger.Debug("打开注册表失败: %v", err)
 		return
 	}
 	defer key.Close()
 
 	if err := key.DeleteValue("AutoConfigURL"); err != nil {
-		logger.Debug("Failed to delete AutoConfigURL: %v", err)
+		logger.Debug("删除 AutoConfigURL 失败: %v", err)
 	}
 
-	logger.Info("Proxy cleared successfully.")
+	logger.Info("系统代理已清除。")
 }
 
 // HasTool checks if a system tool is available in PATH

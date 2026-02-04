@@ -10,21 +10,21 @@ import (
 func Install() {
 	binPath := getBinPath()
 
-	logger.Info("Installing binary to %s...", binPath)
+	logger.Info("正在安装二进制文件到 %s...", binPath)
 	if err := os.MkdirAll(filepath.Dir(binPath), 0755); err != nil {
-		logger.Fatal("Failed to create bin dir: %v", err)
+		logger.Fatal("创建目录失败: %v", err)
 	}
 
 	srcPath, err := os.Executable()
 	if err != nil {
-		logger.Fatal("Failed to get executable path: %v", err)
+		logger.Fatal("获取执行文件路径失败: %v", err)
 	}
 
 	if err := copyFile(srcPath, binPath); err != nil {
-		logger.Fatal("Failed to copy binary: %v", err)
+		logger.Fatal("复制文件失败: %v", err)
 	}
 	if err := os.Chmod(binPath, 0755); err != nil {
-		logger.Fatal("Failed to set binary permissions: %v", err)
+		logger.Fatal("设置文件权限失败: %v", err)
 	}
 
 	// CA certificate will be auto-generated on first run if needed

@@ -9,41 +9,41 @@ import (
 )
 
 func Uninstall() {
-	logger.Info("Starting uninstallation...")
+	logger.Info("正在开始卸载...")
 
 	uninstallServicePlatform()
 
 	binPath := getBinPath()
 	if _, err := os.Stat(binPath); err == nil {
 		if err := os.Remove(binPath); err != nil {
-			logger.Warn("Failed to remove binary: %v", err)
+			logger.Warn("移除二进制文件失败: %v", err)
 		} else {
-			logger.Info("Removed binary: %s", binPath)
+			logger.Info("已移除二进制文件: %s", binPath)
 		}
 	}
 
-	logger.Info("Clearing system proxy settings...")
+	logger.Info("正在清除系统代理设置...")
 	sysproxy.ClearPAC()
 
 	appDir, _ := config.GetAppDataDir()
 	if _, err := os.Stat(appDir); err == nil {
 		caCertPath := filepath.Join(appDir, "certs", "root.crt")
 		if _, err := os.Stat(caCertPath); err == nil {
-			logger.Info("Removing Root CA from system trust store...")
+			logger.Info("正在从系统信任库移除根 CA...")
 			if err := sysproxy.UninstallCert(caCertPath); err != nil {
-				logger.Warn("Failed to remove certificate from system trust store: %v", err)
+				logger.Warn("从系统信任库移除证书失败: %v", err)
 			}
 		}
 
-		logger.Info("Removing configuration directory: %s", appDir)
+		logger.Info("正在移除配置目录: %s", appDir)
 		if err := os.RemoveAll(appDir); err != nil {
-			logger.Warn("Failed to remove config dir: %v", err)
+			logger.Warn("移除配置目录失败: %v", err)
 		}
 	}
 
 	removeCompletions()
 
-	logger.Info("Uninstallation complete.")
+	logger.Info("卸载完成。")
 }
 
 func removeCompletions() {

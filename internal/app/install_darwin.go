@@ -43,24 +43,23 @@ func installServicePlatform(binPath string) {
 	plistPath := filepath.Join(launchDir, "com.snirect.proxy.plist")
 
 	if err := os.MkdirAll(launchDir, 0755); err != nil {
-		logger.Fatal("Failed to create LaunchAgents directory: %v", err)
+		logger.Fatal("创建 LaunchAgents 目录失败: %v", err)
 	}
 
 	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
-		logger.Fatal("Failed to write plist file: %v", err)
+		logger.Fatal("写入 plist 文件失败: %v", err)
 	}
-	logger.Info("Created launchd plist file at: %s", plistPath)
+	logger.Info("已创建 launchd plist 文件: %s", plistPath)
 
 	cmd := exec.Command("launchctl", "load", plistPath)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		logger.Debug("launchctl load failed: %v, output: %s", err, string(output))
+		logger.Debug("执行 launchctl load 失败: %v, 输出: %s", err, string(output))
 	}
 
 	cmd = exec.Command("launchctl", "enable", fmt.Sprintf("gui/%d/com.snirect.proxy", os.Getuid()))
 	if output, err := cmd.CombinedOutput(); err != nil {
-		logger.Debug("launchctl enable failed: %v, output: %s", err, string(output))
+		logger.Debug("执行 launchctl enable 失败: %v, 输出: %s", err, string(output))
 	}
 
-	logger.Info("Snirect installed and registered (auto-start enabled).")
-	logger.Info("Service file: %s", plistPath)
+	logger.Info("Snirect 安装成功并已注册（开机自启已启用）。")
 }

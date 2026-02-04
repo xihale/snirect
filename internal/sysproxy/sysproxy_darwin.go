@@ -28,31 +28,30 @@ func checkEnvPlatform(env map[string]string) {
 }
 
 func installCertPlatform(certPath string) (bool, error) {
-	logger.Info("Attempting to install certificate: %s", certPath)
-
 	certData, err := os.ReadFile(certPath)
 	if err != nil {
 		return false, fmt.Errorf("failed to read certificate: %v", err)
 	}
 
 	if isCertInstalled(certData) {
-		logger.Info("Certificate already installed in system trust store")
+		logger.Info("根证书已安装在系统信任库中")
 		return false, nil
 	}
 
+	logger.Info("正在安装证书: %s", certPath)
 	keychainPath := os.ExpandEnv("$HOME/Library/Keychains/login.keychain-db")
 
 	cmd := exec.Command("security", "add-trusted-cert", "-d", "-r", "trustRoot", "-k", keychainPath, certPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	logger.Info("Running: security add-trusted-cert -d -r trustRoot -k %s %s", keychainPath, certPath)
+	logger.Info("执行命令: security add-trusted-cert -d -r trustRoot -k %s %s", keychainPath, certPath)
 
 	if err := cmd.Run(); err != nil {
-		return false, fmt.Errorf("failed to install certificate: %v (you may need to manually trust the certificate in Keychain Access)", err)
+		return false, fmt.Errorf("安装证书失败: %v，请手动安装证书: %s", err, certPath)
 	}
 
-	logger.Info("Certificate installed successfully!")
+	logger.Info("证书安装成功！")
 	return true, nil
 }
 
@@ -80,14 +79,14 @@ func isCertInstalled(certData []byte) bool {
 }
 
 func forceInstallCertPlatform(certPath string) (bool, error) {
-	logger.Info("Force installing certificate: %s", certPath)
+	logger.Info("正在强制安装证书: %s", certPath)
 
 	uninstallCertPlatform(certPath)
 	return installCertPlatform(certPath)
 }
 
 func uninstallCertPlatform(certPath string) error {
-	logger.Info("Attempting to uninstall certificate from Keychain")
+	logger.Info("正在尝试卸载证书")
 
 	keychainPath := os.ExpandEnv("$HOME/Library/Keychains/login.keychain-db")
 
@@ -96,20 +95,20 @@ func uninstallCertPlatform(certPath string) error {
 
 	if err != nil {
 		if strings.Contains(string(output), "SecKeychainSearchCopyNext") {
-			logger.Info("Certificate was not found in Keychain")
+			logger.Info("未找到证书")
 			return nil
 		}
-		return fmt.Errorf("failed to uninstall certificate: %v, output: %s", err, string(output))
+		return fmt.Errorf("卸载证书失败: %v, 输出: %s", err, string(output))
 	}
 
-	logger.Info("Certificate uninstalled successfully from Keychain!")
+	logger.Info("证书卸载成功！")
 	return nil
 }
 
 func checkCertStatusPlatform(certPath string) (bool, error) {
 	certData, err := os.ReadFile(certPath)
 	if err != nil {
-		return false, fmt.Errorf("failed to read certificate: %v", err)
+		return false, fmt.Errorf("读取证书失败: %v", err)
 	}
 
 	installed := isCertInstalled(certData)
@@ -119,22 +118,22 @@ func checkCertStatusPlatform(certPath string) (bool, error) {
 func setPACPlatform(pacURL string) {
 	interfaces, err := getNetworkInterfaces()
 	if err != nil {
-		logger.Warn("Failed to get network interfaces: %v. Cannot set proxy.", err)
+		logger.Warn("获取网络接口失败: %v。无法设置代理。", err)
 		return
 	}
 
 	if len(interfaces) == 0 {
-		logger.Warn("No active network interfaces found. Cannot set proxy.")
+		logger.Warn("未找到活跃的网络接口。无法设置代理。")
 		return
 	}
 
 	for _, iface := range interfaces {
-		logger.Info("Setting PAC proxy for interface: %s", iface)
+		logger.Info("正在为接口设置 PAC 代理: %s", iface)
 		cmd := exec.Command("networksetup", "-setautoproxyurl", iface, pacURL)
 		if output, err := cmd.CombinedOutput(); err != nil {
-			logger.Debug("Failed to set proxy for %s: %v, output: %s", iface, err, string(output))
+			logger.Debug("设置 %s 代理失败: %v, 输出: %s", iface, err, string(output))
 		} else {
-			logger.Info("Proxy set successfully for %s", iface)
+			logger.Info("成功为 %s 设置代理", iface)
 		}
 	}
 }
@@ -142,15 +141,15 @@ func setPACPlatform(pacURL string) {
 func clearPACPlatform() {
 	interfaces, err := getNetworkInterfaces()
 	if err != nil {
-		logger.Debug("Failed to get network interfaces: %v", err)
+		logger.Debug("获取网络接口失败: %v", err)
 		return
 	}
 
 	for _, iface := range interfaces {
-		logger.Info("Clearing PAC proxy for interface: %s", iface)
+		logger.Info("正在清除接口的 PAC 代理: %s", iface)
 		cmd := exec.Command("networksetup", "-setautoproxystate", iface, "off")
 		if output, err := cmd.CombinedOutput(); err != nil {
-			logger.Debug("Failed to clear proxy for %s: %v, output: %s", iface, err, string(output))
+			logger.Debug("清除 %s 代理失败: %v, 输出: %s", iface, err, string(output))
 		}
 	}
 }

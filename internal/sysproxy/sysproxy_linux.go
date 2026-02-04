@@ -35,17 +35,17 @@ func checkEnvPlatform(env map[string]string) {
 }
 
 func installCertPlatform(certPath string) (bool, error) {
-	logger.Info("Attempting to install certificate: %s", certPath)
-
 	certData, err := os.ReadFile(certPath)
 	if err != nil {
 		return false, fmt.Errorf("failed to read certificate: %v", err)
 	}
 
 	if isCertInstalled(certData) {
-		logger.Info("Certificate already installed in system trust store")
+		logger.Info("根证书已安装在系统信任库中")
 		return false, nil
 	}
+
+	logger.Info("正在安装证书: %s", certPath)
 
 	var destPath string
 	var updateCmd string
@@ -55,7 +55,7 @@ func installCertPlatform(certPath string) (bool, error) {
 		cmd := exec.Command("sudo", path, "anchor", "--store", certPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		logger.Info("Running: sudo %s anchor --store %s", path, certPath)
+		logger.Info("执行命令: sudo %s anchor --store %s", path, certPath)
 		if err := cmd.Run(); err != nil {
 			return false, err
 		}
@@ -70,7 +70,7 @@ func installCertPlatform(certPath string) (bool, error) {
 		return false, fmt.Errorf("could not detect certificate management tool (trust, update-ca-certificates, or update-ca-trust)")
 	}
 
-	logger.Info("Copying certificate to %s...", destPath)
+	logger.Info("正在将证书复制到 %s...", destPath)
 	cpCmd := exec.Command("sudo", "cp", certPath, destPath)
 	cpCmd.Stdout = os.Stdout
 	cpCmd.Stderr = os.Stderr
@@ -78,7 +78,7 @@ func installCertPlatform(certPath string) (bool, error) {
 		return false, fmt.Errorf("failed to copy certificate: %v", err)
 	}
 
-	logger.Info("Updating trust store using %s...", updateCmd)
+	logger.Info("正在使用 %s 更新信任库...", updateCmd)
 	cmdArgs := append([]string{updateCmd}, updateArgs...)
 	upCmd := exec.Command("sudo", cmdArgs...)
 	upCmd.Stdout = os.Stdout
@@ -87,7 +87,7 @@ func installCertPlatform(certPath string) (bool, error) {
 		return false, fmt.Errorf("failed to update trust store: %v", err)
 	}
 
-	logger.Info("Certificate installed successfully!")
+	logger.Info("证书安装成功！")
 	return true, nil
 }
 
@@ -117,14 +117,14 @@ func isCertInstalled(certData []byte) bool {
 }
 
 func forceInstallCertPlatform(certPath string) (bool, error) {
-	logger.Info("Force installing certificate: %s", certPath)
+	logger.Info("正在强制安装证书: %s", certPath)
 
 	uninstallCertPlatform(certPath)
 	return installCertPlatform(certPath)
 }
 
 func uninstallCertPlatform(certPath string) error {
-	logger.Info("Attempting to uninstall certificate")
+	logger.Info("正在尝试卸载证书")
 
 	certPaths := []string{
 		"/usr/local/share/ca-certificates/snirect-root.crt",
@@ -135,12 +135,12 @@ func uninstallCertPlatform(certPath string) error {
 
 	for _, path := range certPaths {
 		if _, err := os.Stat(path); err == nil {
-			logger.Info("Removing certificate from %s...", path)
+			logger.Info("正在从 %s 移除证书...", path)
 			rmCmd := exec.Command("sudo", "rm", path)
 			rmCmd.Stdout = os.Stdout
 			rmCmd.Stderr = os.Stderr
 			if err := rmCmd.Run(); err != nil {
-				logger.Warn("Failed to remove certificate from %s: %v", path, err)
+				logger.Warn("从 %s 移除证书失败: %v", path, err)
 			} else {
 				removed = true
 			}
@@ -148,17 +148,17 @@ func uninstallCertPlatform(certPath string) error {
 	}
 
 	if path, err := exec.LookPath("trust"); err == nil {
-		logger.Info("Removing certificate from trust store using trust tool...")
+		logger.Info("正在使用 trust 工具从信任库中移除证书...")
 		cmd := exec.Command("sudo", path, "anchor", "--remove", certPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			logger.Warn("Failed to remove certificate using trust: %v", err)
+			logger.Warn("使用 trust 移除证书失败: %v", err)
 		} else {
 			removed = true
 		}
 	} else if path, err := exec.LookPath("update-ca-certificates"); err == nil {
-		logger.Info("Updating CA certificates...")
+		logger.Info("正在更新 CA 证书...")
 		upCmd := exec.Command("sudo", path)
 		upCmd.Stdout = os.Stdout
 		upCmd.Stderr = os.Stderr
@@ -167,7 +167,7 @@ func uninstallCertPlatform(certPath string) error {
 		}
 		removed = true
 	} else if path, err := exec.LookPath("update-ca-trust"); err == nil {
-		logger.Info("Updating CA trust...")
+		logger.Info("正在更新 CA 信任库...")
 		upCmd := exec.Command("sudo", path)
 		upCmd.Stdout = os.Stdout
 		upCmd.Stderr = os.Stderr
@@ -178,9 +178,9 @@ func uninstallCertPlatform(certPath string) error {
 	}
 
 	if removed {
-		logger.Info("Certificate uninstalled successfully!")
+		logger.Info("证书卸载成功！")
 	} else {
-		logger.Info("Certificate was not found in system trust store")
+		logger.Info("在系统信任库中未找到证书")
 	}
 
 	return nil
