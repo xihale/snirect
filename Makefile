@@ -2,7 +2,7 @@ BINARY_NAME=snirect
 BUILD_DIR=dist
 CMD_PATH=./cmd/snirect
 
-.PHONY: all build release install uninstall clean cross-all clean-dist update-rules
+.PHONY: all build release install uninstall clean cross-all clean-dist
 
 all: build
 
@@ -23,10 +23,6 @@ install: build
 # Run the internal uninstall logic
 uninstall: build
 	./$(BUILD_DIR)/$(BINARY_NAME) uninstall
-
-# Update rules from Cealing-Host
-update-rules:
-	cd scripts && go run update_rules.go
 
 # Clean build artifacts
 clean:

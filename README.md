@@ -4,13 +4,13 @@
 
 **Cross-Platform:** Linux · macOS · Windows
 
-## 📚 Dataset Source
+## 数据源
 
 Domain rules and configuration data are sourced from [Cealing-Host](https://github.com/SpaceTimee/Cealing-Host).
 
 ---
 
-## 🚀 Quick Start (Simple)
+## 快速开始
 
 Just want to get started? Run these commands:
 
@@ -38,7 +38,7 @@ That's it! Your system is now using Snirect to bypass SNI-based blocking.
 
 ---
 
-## 📋 Command Reference
+## 命令参考
 
 | Quick Command | What it does |
 |:--|:--|
@@ -49,12 +49,12 @@ That's it! Your system is now using Snirect to bypass SNI-based blocking.
 
 ---
 
-## 🔧 Advanced Usage
+## 进阶使用
 
 <details>
-<summary>Click to expand advanced topics</summary>
+<summary>点击展开进阶主题</summary>
 
-### Installation Options
+### 安装选项
 
 #### Option 1: From Release (Recommended)
 
@@ -151,7 +151,7 @@ snirect uninstall-cert   # Remove CA certificate
 snirect firefox-cert     # Install CA to Firefox (recommended for Firefox users)
 ```
 
-**⚠️ Firefox 用户注意**: Firefox 使用独立证书存储，运行 `snirect install-cert` 后仍可能显示证书警告。
+**Firefox 用户注意**: Firefox 使用独立证书存储，运行 `snirect install-cert` 后仍可能显示证书警告。
 请使用 `snirect firefox-cert` 安装证书到 Firefox。
 
 ### All Available Commands
@@ -191,24 +191,20 @@ Snirect uses rules to determine which domains need SNI modification. Default rul
 - `~/.config/snirect/rules.toml` — Domain rules
 - `~/.config/snirect/config.toml` — DNS configuration
 
-To update rules:
-```bash
-make update-rules
-```
 
-### ⚠️ Security Note
+### 安全注意事项
 
 Some rules (Google/YouTube) use third-party public proxy IPs that require `check_hostname = false`. This has MITM risks. For better security:
 
 1. Use your own trusted proxy IPs
-2. Monitor the [TODO list](https://github.com/xihale/snirect/issues) for GGC IP updates
+2. Monitor the GGC IP updates
 3. Consider contributing verified IPs
 
 </details>
 
 ---
 
-## 🛠️ Troubleshooting
+## 故障排除
 
 | Issue | Solution |
 |:--|:--|
@@ -216,11 +212,11 @@ Some rules (Google/YouTube) use third-party public proxy IPs that require `check
 | "tls: unknown certificate" | CA 证书安装失败或缓存未刷新。请尝试重启应用，或检查系统证书管理器中是否存在相应证书。 |
 | "Port already in use" | Change `server.port` in config.toml |
 | "Proxy not working" | Run `snirect status` to check |
-| "Can't access some sites" | Check `rules.toml` or run `make update-rules` |
+| "Can't access some sites" | Check `rules.toml` |
 
 ### 浏览器证书安装（重要）
 
-**⚠️ 注意：不同浏览器使用不同的证书存储机制**
+**注意：不同浏览器使用不同的证书存储机制**
 
 运行 `snirect install-cert` 后：
 - **Chrome/Edge/Brave/Safari** 会自动信任证书（使用系统证书存储）

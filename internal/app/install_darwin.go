@@ -14,7 +14,7 @@ func getBinPath() string {
 	return "/usr/local/bin/snirect"
 }
 
-func installServicePlatform(binPath string) {
+func installServicePlatform(binPath string) error {
 	homeDir, _ := os.UserHomeDir()
 	plistContent := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -28,7 +28,7 @@ func installServicePlatform(binPath string) {
 		<string>--set-proxy</string>
 	</array>
 	<key>RunAtLoad</key>
-	<true/>
+	<false/>
 	<key>KeepAlive</key>
 	<true/>
 	<key>StandardOutPath</key>
@@ -43,23 +43,14 @@ func installServicePlatform(binPath string) {
 	plistPath := filepath.Join(launchDir, "com.snirect.proxy.plist")
 
 	if err := os.MkdirAll(launchDir, 0755); err != nil {
-		logger.Fatal("创建 LaunchAgents 目录失败: %v", err)
+		return fmt.Errorf("创建 LaunchAgents 目录失败: %w", err)
 	}
 
 	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
-		logger.Fatal("写入 plist 文件失败: %v", err)
+		return fmt.Errorf("写入 plist 文件失败: %w", err)
 	}
 	logger.Info("已创建 launchd plist 文件: %s", plistPath)
 
-	cmd := exec.Command("launchctl", "load", plistPath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		logger.Debug("执行 launchctl load 失败: %v, 输出: %s", err, string(output))
-	}
-
-	cmd = exec.Command("launchctl", "enable", fmt.Sprintf("gui/%d/com.snirect.proxy", os.Getuid()))
-	if output, err := cmd.CombinedOutput(); err != nil {
-		logger.Debug("执行 launchctl enable 失败: %v, 输出: %s", err, string(output))
-	}
-
-	logger.Info("Snirect 安装成功并已注册（开机自启已启用）。")
+	logger.Info("Snirect 安装成功。")
+	return nil
 }

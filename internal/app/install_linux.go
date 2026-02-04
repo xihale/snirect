@@ -15,7 +15,7 @@ func getBinPath() string {
 	return filepath.Join(homeDir, ".local", "bin", "snirect")
 }
 
-func installServicePlatform(binPath string) {
+func installServicePlatform(binPath string) error {
 	homeDir, _ := os.UserHomeDir()
 	serviceContent := fmt.Sprintf(`[Unit]
 Description=Snirect - SNI RST Bypass Proxy
@@ -35,18 +35,18 @@ WantedBy=default.target
 	servicePath := filepath.Join(systemdDir, "snirect.service")
 
 	if err := os.MkdirAll(systemdDir, 0755); err != nil {
-		logger.Fatal("创建 systemd 目录失败: %v", err)
+		return fmt.Errorf("创建 systemd 目录失败: %w", err)
 	}
 
 	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
-		logger.Fatal("写入服务文件失败: %v", err)
+		return fmt.Errorf("写入服务文件失败: %w", err)
 	}
 	logger.Info("已创建 systemd 服务文件: %s", servicePath)
 
 	runSystemctl("daemon-reload")
-	runSystemctl("enable", "snirect")
 
-	logger.Info("Snirect 安装成功并已注册（开机自启已启用）。")
+	logger.Info("Snirect 安装成功。")
+	return nil
 }
 
 func runSystemctl(args ...string) {

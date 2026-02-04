@@ -23,8 +23,8 @@ Supports: Linux, macOS, and Windows`,
 	CompletionOptions: cobra.CompletionOptions{
 		DisableDefaultCmd: true,
 	},
-	Run: func(cmd *cobra.Command, args []string) {
-		runProxy(cmd)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runProxy(cmd)
 	},
 }
 

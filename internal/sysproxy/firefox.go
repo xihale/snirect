@@ -31,7 +31,7 @@ func InstallFirefoxCert(certPath string) error {
 			logger.Warn("Failed to install cert to Firefox profile %s: %v", filepath.Base(profile), err)
 		} else {
 			installed++
-			logger.Info("✓ 证书已安装到 Firefox profile: %s", filepath.Base(profile))
+			logger.Info("证书已安装到 Firefox profile: %s", filepath.Base(profile))
 		}
 	}
 
@@ -60,7 +60,7 @@ func UninstallFirefoxCert() error {
 		cmd := exec.Command("certutil", "-D", "-n", "Snirect Root CA", "-d", "sql:"+profile)
 		if err := cmd.Run(); err == nil {
 			removed++
-			logger.Info("✓ 证书已从 Firefox profile 移除: %s", filepath.Base(profile))
+			logger.Info("证书已从 Firefox profile 移除: %s", filepath.Base(profile))
 		}
 	}
 

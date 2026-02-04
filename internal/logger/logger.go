@@ -15,7 +15,7 @@ var (
 )
 
 func init() {
-	atom = zap.NewAtomicLevelAt(zap.DebugLevel)
+	atom = zap.NewAtomicLevelAt(zap.InfoLevel)
 
 	// Default setup: only console
 	core := zapcore.NewCore(
@@ -24,20 +24,19 @@ func init() {
 		atom,
 	)
 
-	logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1))
+	logger := zap.New(core)
 	sugar = logger.Sugar()
 }
 
 func getConsoleEncoder(color bool) zapcore.Encoder {
-	config := zap.NewDevelopmentEncoderConfig()
+	config := zap.NewProductionEncoderConfig()
+	config.EncodeTime = zapcore.TimeEncoderOfLayout("2006/01/02 15:04:05")
 	if color {
 		config.EncodeLevel = zapcore.CapitalColorLevelEncoder
 	} else {
 		config.EncodeLevel = zapcore.CapitalLevelEncoder
 	}
-	config.EncodeTime = zapcore.TimeEncoderOfLayout("2006/01/02 15:04:05")
-	config.CallerKey = "caller"
-	config.EncodeCaller = zapcore.ShortCallerEncoder
+	config.CallerKey = "" // Disable caller
 	return zapcore.NewConsoleEncoder(config)
 }
 
@@ -61,14 +60,14 @@ func SetLevel(l string) {
 func SetOutput(path string) error {
 	var cores []zapcore.Core
 
-	// 1. Console Core (Always colored)
+	// 1. Console Core
 	cores = append(cores, zapcore.NewCore(
 		getConsoleEncoder(true),
 		zapcore.Lock(os.Stderr),
 		atom,
 	))
 
-	// 2. File Core (No colors)
+	// 2. File Core
 	if path != "" {
 		w := zapcore.AddSync(&lumberjack.Logger{
 			Filename:   path,
@@ -79,14 +78,14 @@ func SetOutput(path string) error {
 		})
 
 		cores = append(cores, zapcore.NewCore(
-			getConsoleEncoder(false), // No colors for file
+			getConsoleEncoder(false),
 			w,
 			atom,
 		))
 	}
 
 	core := zapcore.NewTee(cores...)
-	logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1))
+	logger := zap.New(core)
 	sugar = logger.Sugar()
 	return nil
 }

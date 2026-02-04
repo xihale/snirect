@@ -7,7 +7,7 @@ import (
 	"snirect/internal/logger"
 )
 
-func uninstallServicePlatform() {
+func uninstallServicePlatform() error {
 	taskName := "Snirect"
 
 	logger.Info("Removing scheduled task...")
@@ -18,4 +18,5 @@ func uninstallServicePlatform() {
 	} else {
 		logger.Info("Removed scheduled task: %s", taskName)
 	}
+	return nil
 }

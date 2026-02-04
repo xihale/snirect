@@ -22,13 +22,16 @@ Usage examples:
   PowerShell:  & snirect proxy-env | Invoke-Expression`,
 	Example: `  snirect proxy-env        # Print proxy environment commands
   eval $(snirect proxy-env)  # Apply to current shell (Linux/macOS)`,
-	Run: func(cmd *cobra.Command, args []string) {
-		appDir, _ := config.GetAppDataDir()
+	RunE: func(cmd *cobra.Command, args []string) error {
+		appDir, err := config.GetAppDataDir()
+		if err != nil {
+			return fmt.Errorf("failed to get app data dir: %w", err)
+		}
 		cfgPath := filepath.Join(appDir, "config.toml")
 		cfg, err := config.LoadConfig(cfgPath)
 
 		port := 7654
-		if err == nil {
+		if err == nil && cfg != nil {
 			port = cfg.Server.Port
 		}
 
@@ -40,6 +43,7 @@ Usage examples:
 			fmt.Printf("export http_proxy=http://127.0.0.1:%d\n", port)
 			fmt.Printf("export https_proxy=http://127.0.0.1:%d\n", port)
 		}
+		return nil
 	},
 }
 

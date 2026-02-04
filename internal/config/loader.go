@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"snirect/internal/util"
+	"snirect/internal/logger"
 	"sort"
 
 	"github.com/pelletier/go-toml/v2"
@@ -12,7 +12,7 @@ import (
 
 type Rules struct {
 	AlterHostname map[string]string      `toml:"alter_hostname"`
-	CertVerify    map[string]interface{} `toml:"cert_verify"` // []string or bool
+	CertVerify    map[string]interface{} `toml:"cert_verify"`
 	Hosts         map[string]string      `toml:"hosts"`
 
 	alterHostnameKeys []string
@@ -22,22 +22,11 @@ type Rules struct {
 
 func (r *Rules) Init() {
 	r.alterHostnameKeys = getSortedKeys(r.AlterHostname)
-	r.certVerifyKeys = getSortedKeysInterface(r.CertVerify)
+	r.certVerifyKeys = getSortedKeys(r.CertVerify)
 	r.hostsKeys = getSortedKeys(r.Hosts)
 }
 
-func getSortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		return len(keys[i]) > len(keys[j])
-	})
-	return keys
-}
-
-func getSortedKeysInterface(m map[string]interface{}) []string {
+func getSortedKeys[T any](m map[string]T) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -54,7 +43,7 @@ func (r *Rules) GetAlterHostname(host string) (string, bool) {
 	}
 
 	for _, k := range r.alterHostnameKeys {
-		if util.MatchPattern(k, host) {
+		if MatchPattern(k, host) {
 			return r.AlterHostname[k], true
 		}
 	}
@@ -68,7 +57,7 @@ func (r *Rules) GetHost(host string) (string, bool) {
 	}
 
 	for _, k := range r.hostsKeys {
-		if util.MatchPattern(k, host) {
+		if MatchPattern(k, host) {
 			return r.Hosts[k], true
 		}
 	}
@@ -76,52 +65,67 @@ func (r *Rules) GetHost(host string) (string, bool) {
 	return "", false
 }
 
-func (r *Rules) GetCertVerify(host string) (interface{}, bool) {
+func (r *Rules) GetCertVerify(host string) (CertPolicy, bool) {
 	if val, ok := r.CertVerify[host]; ok {
-		return val, true
+		p, _ := ParseCertPolicy(val)
+		return p, true
 	}
 
 	for _, k := range r.certVerifyKeys {
-		if util.MatchPattern(k, host) {
-			return r.CertVerify[k], true
+		if MatchPattern(k, host) {
+			p, _ := ParseCertPolicy(r.CertVerify[k])
+			return p, true
 		}
 	}
 
-	return nil, false
+	return CertPolicy{}, false
 }
 
 func LoadConfig(path string) (*Config, error) {
 	var cfg Config
 
+	// 1. Load internal defaults
 	if err := toml.Unmarshal([]byte(DefaultConfigTOML), &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse default config: %w", err)
 	}
 
+	// 2. Overwrite with user config if it exists
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return &cfg, nil
 	}
 	if err != nil {
-		return nil, err
+		return &cfg, fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	if err := toml.Unmarshal(data, &cfg); err != nil {
-		// If user config is invalid, return the default config we already parsed above,
-		// but pass the error so caller knows something went wrong.
-		return &cfg, err
+		return &cfg, fmt.Errorf("failed to parse user config: %w", err)
 	}
 	return &cfg, nil
 }
 
 func LoadRules(path string) (*Rules, error) {
 	var rules Rules
+
+	// 1. Load internal default rules
+	if err := toml.Unmarshal([]byte(DefaultRulesTOML), &rules); err != nil {
+		return nil, fmt.Errorf("failed to parse default rules: %w", err)
+	}
+
+	// 2. Overwrite with user rules if they exist
 	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		rules.Init()
+		return &rules, nil
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read rules file: %w", err)
 	}
+
 	if err := toml.Unmarshal(data, &rules); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse user rules: %w", err)
 	}
+
 	rules.Init()
 	return &rules, nil
 }
@@ -151,9 +155,9 @@ func EnsureConfig(force bool) (string, error) {
 func ensureFile(path, content string, force bool) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) || force {
 		if force {
-			fmt.Printf("Overwriting file: %s\n", path)
+			logger.Info("Overwriting file: %s", path)
 		} else {
-			fmt.Printf("Creating default file: %s\n", path)
+			logger.Info("Creating default file: %s", path)
 		}
 		return os.WriteFile(path, []byte(content), 0644)
 	} else if err != nil {

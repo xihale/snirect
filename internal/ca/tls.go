@@ -18,7 +18,7 @@ func (cm *CertManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certific
 	}
 
 	// Generate
-	derBytes, priv, err := cm.Sign([]string{host})
+	derBytes, priv, err := cm.SignLeafCert([]string{host})
 	if err != nil {
 		return nil, err
 	}

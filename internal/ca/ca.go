@@ -10,27 +10,34 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/big"
 	"os"
 	"sync"
 	"time"
 )
 
+// CertManager manages the Root CA and signs leaf certificates for proxying.
 type CertManager struct {
 	RootCert  *x509.Certificate
 	RootKey   interface{}
 	certCache sync.Map // map[string]*tls.Certificate
+	stopChan  chan struct{}
 }
 
+// NewCertManager creates a new CertManager, loading existing CA files or generating new ones.
 func NewCertManager(caCertPath, caKeyPath string) (*CertManager, error) {
-	cm := &CertManager{}
+	cm := &CertManager{
+		stopChan: make(chan struct{}),
+	}
 
 	// Try loading existing CA
 	certPEM, err := os.ReadFile(caCertPath)
 	if err == nil {
 		keyPEM, err := os.ReadFile(caKeyPath)
 		if err == nil {
-			if err := cm.loadCA(certPEM, keyPEM); err == nil {
+			if err := cm.LoadCA(certPEM, keyPEM); err == nil {
+				go cm.cleanupRoutine()
 				return cm, nil
 			}
 		}
@@ -46,10 +53,17 @@ func NewCertManager(caCertPath, caKeyPath string) (*CertManager, error) {
 		return nil, err
 	}
 
+	go cm.cleanupRoutine()
 	return cm, nil
 }
 
-func (cm *CertManager) loadCA(certPEM, keyPEM []byte) error {
+// Close stops the background cleanup routine.
+func (cm *CertManager) Close() {
+	close(cm.stopChan)
+}
+
+// LoadCA loads a CA from PEM data.
+func (cm *CertManager) LoadCA(certPEM, keyPEM []byte) error {
 	block, _ := pem.Decode(certPEM)
 	if block == nil {
 		return errors.New("failed to parse certificate PEM")
@@ -65,49 +79,49 @@ func (cm *CertManager) loadCA(certPEM, keyPEM []byte) error {
 	}
 
 	var key interface{}
-	if block.Type == "RSA PRIVATE KEY" {
+	switch block.Type {
+	case "RSA PRIVATE KEY":
 		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
-	} else if block.Type == "EC PRIVATE KEY" {
+	case "EC PRIVATE KEY":
 		key, err = x509.ParseECPrivateKey(block.Bytes)
-	} else {
-		return errors.New("unknown key type: " + block.Type)
+	default:
+		return fmt.Errorf("unknown key type: %s", block.Type)
 	}
 
 	if err != nil {
 		return err
 	}
 
-	switch k := key.(type) {
-	case *rsa.PrivateKey:
-		if cert.PublicKeyAlgorithm != x509.RSA {
-			return errors.New("certificate public key algorithm mismatch (expected RSA)")
-		}
-		pubKey, ok := cert.PublicKey.(*rsa.PublicKey)
-		if !ok {
-			return errors.New("certificate public key type mismatch")
-		}
-		if pubKey.N.Cmp(k.N) != 0 || pubKey.E != k.E {
-			return errors.New("private key does not match certificate public key")
-		}
-	case *ecdsa.PrivateKey:
-		if cert.PublicKeyAlgorithm != x509.ECDSA {
-			return errors.New("certificate public key algorithm mismatch (expected ECDSA)")
-		}
-		pubKey, ok := cert.PublicKey.(*ecdsa.PublicKey)
-		if !ok {
-			return errors.New("certificate public key type mismatch")
-		}
-		if pubKey.X.Cmp(k.X) != 0 || pubKey.Y.Cmp(k.Y) != 0 {
-			return errors.New("private key does not match certificate public key")
-		}
+	if err := verifyKey(cert, key); err != nil {
+		return err
 	}
 
 	cm.RootCert = cert
 	cm.RootKey = key
+	return nil
+}
 
-	// Start cleanup routine
-	go cm.cleanupRoutine()
-
+func verifyKey(cert *x509.Certificate, key interface{}) error {
+	switch k := key.(type) {
+	case *rsa.PrivateKey:
+		if cert.PublicKeyAlgorithm != x509.RSA {
+			return errors.New("algorithm mismatch: expected RSA")
+		}
+		pub, ok := cert.PublicKey.(*rsa.PublicKey)
+		if !ok || pub.N.Cmp(k.N) != 0 || pub.E != k.E {
+			return errors.New("private key does not match certificate")
+		}
+	case *ecdsa.PrivateKey:
+		if cert.PublicKeyAlgorithm != x509.ECDSA {
+			return errors.New("algorithm mismatch: expected ECDSA")
+		}
+		pub, ok := cert.PublicKey.(*ecdsa.PublicKey)
+		if !ok || pub.X.Cmp(k.X) != 0 || pub.Y.Cmp(k.Y) != 0 {
+			return errors.New("private key does not match certificate")
+		}
+	default:
+		return errors.New("unsupported key type")
+	}
 	return nil
 }
 
@@ -183,7 +197,8 @@ func (cm *CertManager) saveCA(certPath, keyPath string) error {
 	return nil
 }
 
-func (cm *CertManager) Sign(hosts []string) ([]byte, interface{}, error) {
+// SignLeafCert signs a new leaf certificate for the given hosts.
+func (cm *CertManager) SignLeafCert(hosts []string) ([]byte, interface{}, error) {
 	// Generate leaf key (ECDSA is faster)
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -218,25 +233,25 @@ func (cm *CertManager) Sign(hosts []string) ([]byte, interface{}, error) {
 
 func (cm *CertManager) cleanupRoutine() {
 	ticker := time.NewTicker(1 * time.Hour)
-	for range ticker.C {
-		cm.certCache.Range(func(key, value interface{}) bool {
-			// We can't easily check cert expiry without parsing, but we know we issue them for 24h.
-			// A simple strategy is to just clear the cache periodically, or check creation time if we stored it.
-			// Since we only store *tls.Certificate, we rely on the fact that if it's in cache, it was generated recently?
-			// No, it could stay there forever.
+	defer ticker.Stop()
 
-			// Let's parse the leaf if not present (it usually isn't populated by our manual struct construction)
-			cert := value.(*tls.Certificate)
-			if len(cert.Certificate) > 0 {
-				// Parse the first cert in chain (leaf)
-				x509Cert, err := x509.ParseCertificate(cert.Certificate[0])
-				if err == nil {
-					if time.Now().After(x509Cert.NotAfter) {
-						cm.certCache.Delete(key)
+	for {
+		select {
+		case <-cm.stopChan:
+			return
+		case <-ticker.C:
+			cm.certCache.Range(func(key, value interface{}) bool {
+				cert := value.(*tls.Certificate)
+				if len(cert.Certificate) > 0 {
+					x509Cert, err := x509.ParseCertificate(cert.Certificate[0])
+					if err == nil {
+						if time.Now().After(x509Cert.NotAfter) {
+							cm.certCache.Delete(key)
+						}
 					}
 				}
-			}
-			return true
-		})
+				return true
+			})
+		}
 	}
 }

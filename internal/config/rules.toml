@@ -1,16 +1,26 @@
-# Snirect 规则文件
-# 更新时可直接覆盖此文件，DNS 配置已移至 config.toml
-# 支持的模式：
-#   [alter_hostname] - SNI 伪装目标
-#   [cert_verify]    - 证书验证例外（布尔值或域名数组）
-#   [hosts]          - 静态 IP 映射
-#
-# 通配符：
-#   *example.com  - 匹配所有以 example.com 结尾的域名
-#   example*     - 匹配所有以 example 开头的域名
-#   #...         - 注释掉的规则（不生效）
-#   $...         - 严格匹配，不使用通配符
+# Snirect Rules Configuration
+# ⚠️ This file defines redirection, certificate verification, and host mapping rules.
+# ⚠️ 更新时可直接覆盖此文件。部分配置已移至 config.toml。
 
+# [Rule Matching Patterns]
+#   *example.com  - Matches all domains ending with example.com (e.g., a.example.com, b.example.com).
+#   example*      - Matches all domains starting with example.
+#   $example.com  - Strict match. Only matches "example.com" exactly.
+#   #...          - Commented out rule (will be ignored).
+#
+# 规则匹配模式:
+#   *example.com  - 匹配所有以 example.com 结尾的域名 (例如 a.example.com, b.example.com)。
+#   example*      - 匹配所有以 example 开头的域名。
+#   $example.com  - 精确匹配。仅匹配 "example.com"，不包含子域名。
+#   #...          - 被注释掉的规则 (不生效)。
+
+# [SNI Alteration]
+# Maps a target domain to another domain for SNI spoofing.
+# If the value is empty (""), it uses the original domain but still goes through Snirect.
+#
+# SNI 伪装规则
+# 将目标域名映射到另一个域名以进行 SNI 伪装。
+# 如果值为空 ("")，则使用原始域名进行连接，但仍会经过 Snirect 处理。
 [alter_hostname]
 "cdn.jsdelivr.net" = ""
 "images.prismic.io" = "imgix.net"
@@ -190,8 +200,20 @@
 "*imgur.com" = ""
 "*thetvdb.com" = ""
 
+# [Certificate Verification Exceptions]
+# Overrides the global 'check_hostname' setting for specific domains.
+# Values can be boolean or a list of hostnames.
+#
+# 证书验证例外规则
+# 为特定域名覆盖全局的 'check_hostname' 设置。
+# 值可以是布尔值或域名列表。
 [cert_verify]
 
+# [Static Hosts Mapping]
+# Maps a domain to a specific IP address.
+#
+# 静态 Host 映射
+# 将域名映射到指定的 IP 地址。
 [hosts]
 "cdn.jsdelivr.net" = "104.16.89.20"
 "images.prismic.io" = "151.101.78.208"

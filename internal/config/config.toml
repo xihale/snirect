@@ -1,69 +1,139 @@
-# 这是Snirect的配置文件，保存到程序 ⚠工作目录⚠ 后重启程序生效。
-# This is the configuration file of Snirect, save it to the program ⚠ working directory ⚠ and restart the program to take effect.
+# Snirect Configuration File
+# ⚠️ Restart the program for changes to take effect.
 
-# 是否校验证书域名？false 不进行校验，true 进行宽松的校验（如a.example.com能匹配b.example.com），"strict" 进行标准的校验。
-# ⚠️ 警告：设为 false 会降低安全性，可能导致中间人攻击。当前默认关闭是为了兼容部分第三方公益 IP。
-# Whether to verify the certificate domains? Set to false for no verification, set to true for loose verification (e.g. a.example.com matches b.example.com), set to "strict" for standard verification.
-# ⚠️ WARNING: Setting to false reduces security and may allow MITM attacks. Currently disabled by default for compatibility with some third-party public IPs.
+# [Certificate Verification Policy]
+# Controls how Snirect verifies the remote server's certificate.
+# Possible values:
+#   false    - (Default) Disable hostname verification. High compatibility but susceptible to MITM attacks.
+#   true     - Loose verification. Matches subdomains more flexibly (e.g., a.test.com matches b.test.com).
+#   "strict" - Standard strict verification. Recommended for high security.
+#   [ "domain1.com", "domain2.com" ] - List of domains to enable verification for.
+#
+# 证书域名校验策略
+# 控制 Snirect 如何验证远程服务器的证书域名。
+# 可选值:
+#   false    - (默认) 不校验证书域名。兼容性最高，但存在中间人攻击风险。
+#   true     - 宽松校验。允许子域名间的通配匹配。
+#   "strict" - 标准严格校验。建议追求安全的用户开启。
+#   [ "domain1.com", "domain2.com" ] - 仅对列表内的域名开启校验。
 check_hostname = false
 
-# 是否自动设置系统的代理。这可使用命令行参数 --set-proxy 来开启。
-# Whether to set the system proxy automatically. This can be enabled with the command line argument --set-proxy.
+# [System Proxy]
+# Automatically set Snirect as the system proxy on startup.
+# Equivalent to starting with the --set-proxy flag.
+#
+# 自动设置系统代理
+# 启动时自动将 Snirect 设置为系统代理。等同于使用 --set-proxy 命令行参数。
 setproxy = false
 
-# 是否自动导入并信任根证书。可选值：
-#   "auto"   - 自动检测，未安装时才尝试安装（默认）
-#   "always" - 每次启动都强制重新安装
-#   "never"  - 完全禁用自动安装
-# Whether to automatically import and trust the root certificate. Options:
-#   "auto"   - Auto-detect and install only if not present (default)
-#   "always" - Force re-install on every startup
-#   "never"  - Completely disable auto-installation
+# [Root CA Installation]
+# Policy for automatically importing and trusting the Snirect Root CA.
+# Options:
+#   "auto"   - (Default) Install only if the CA is not already trusted.
+#   "always" - Force re-installation on every startup.
+#   "never"  - Disable automatic installation completely.
+#
+# 根证书安装策略
+# 是否自动将 Snirect 的根证书导入并信任到系统中。
+# 可选值:
+#   "auto"   - (默认) 仅在未检测到已信任的证书时尝试安装。
+#   "always" - 每次启动都强制尝试重新安装。
+#   "never"  - 禁用自动安装，需手动处理证书信任。
 importca = "auto"
 
-# 是否开启IPv6支持
-# Whether to enable IPv6 support
+# [IPv6 Support]
+# Enable or disable IPv6 support for proxy connections.
+#
+# IPv6 支持
+# 是否开启对 IPv6 的支持。
 ipv6 = true
 
-# EDNS Client Subnet (ECS) 配置。用于告知 DNS 服务器你的地理位置，从而返回更近的服务器 IP。
-# 设为 "auto" 则根据客户端真实 IP 自动生成，也可以填入一个 CIDR 格式的子网（如 "218.102.0.0/24"）。
-# EDNS Client Subnet (ECS). Tell the DNS server your location to get closer server IPs.
-# Set to "auto" to generate based on client IP, or enter a subnet in CIDR format (e.g., "218.102.0.0/24").
+# [EDNS Client Subnet (ECS)]
+# Provides your network subnet info to DNS servers to get geographically closer IP results.
+# Options:
+#   "auto"   - (Default) Automatically generate based on your public IP.
+#   "CIDR"   - Use a specific subnet (e.g., "218.102.0.0/24").
+#   ""       - Disable ECS.
+#
+# EDNS 客户端子网 (ECS)
+# 向 DNS 服务器提供您的子网信息，以便获取地理位置更近的解析结果。
+# 可选值:
+#   "auto"   - (默认) 根据您的公网 IP 自动生成。
+#   "子网"   - 使用指定的 CIDR 子网 (例如 "218.102.0.0/24")。
+#   ""       - 禁用 ECS 功能。
 ecs = "auto"
 
-# DNS 配置。配置自定义 DNS 服务器用于解析域名。
-# DNS configuration. Configure custom DNS servers for domain resolution.
+# [DNS Settings]
+# Custom DNS resolution settings.
+#
+# DNS 设置
+# 自定义域名解析配置。
 [DNS]
-# DNS 服务器地址，支持 DoH、DoT、DoQ 等格式
-# 默认使用 dnschina1.soraharu.com、Yandex DNS 和 Google DNS
-# DNS server addresses, supporting DoH, DoT, DoQ formats
-# Default: soraharu, Yandex and Google for better accessibility
+# List of upstream DNS servers. Supports DoH, DoT, and DoQ.
+# 上游 DNS 服务器列表。支持 DoH、DoT 和 DoQ 格式。
 nameserver = [
     "https://dnschina1.soraharu.com/dns-query",
     "https://77.88.8.8/dns-query",
     "https://dns.google/dns-query"
 ]
 
-# 引导 DNS，用于解析 DNS 服务器自身的域名
-# Bootstrap DNS used to resolve DNS server hostnames
+# Bootstrap DNS servers used to resolve the hostnames of the nameservers above.
+# 引导 DNS 服务器，用于解析上述加密 DNS 服务器自身的域名。
 bootstrap_dns = ["tls://223.5.5.5"]
 
+# [Timeout Settings]
+# Timeouts in seconds.
+#
+# 超时设置 (秒)
+[timeout]
+# Timeout for establishing a connection to a remote server.
+# 连接远程服务器的超时时间。
+dial = 30
+# Timeout for DNS queries.
+# DNS 查询超时时间。
+dns = 5
 
+# [Resource Limits]
+# Settings to control resource usage.
+#
+# 资源限制
+[limit]
+# Maximum number of concurrent connections (0 = unlimited).
+# 最大并发连接数 (0 表示不限制)。
+max_connections = 0
+# Maximum number of entries in the DNS cache.
+# DNS 缓存的最大条目数。
+dns_cache_size = 10000
+
+# [Logging]
+# Configure how Snirect records its activity.
+#
+# 日志配置
 [log]
+# Log level: "DEBUG", "INFO", "WARN", "ERROR".
+# 日志级别: "DEBUG", "INFO", "WARN", "ERROR"。
 loglevel = "DEBUG"
+# Path to the log file.
+# 日志文件路径。
 logfile = "log.txt"
 
-
+# [Server Settings]
+# Configuration for the Snirect proxy server itself.
+#
+# 本地服务器设置
 [server]
-
-# 服务器绑定的地址。设为 "0.0.0.0" 可以允许同一局域网的设备连接该程序，比如用手机连接电脑的WiFi，设置PAC后既可允许手机使用。可能会有防火墙的提示，要允许访问。
-# The address to which the server is bound. Set to "0.0.0.0" to allow devices on the same LAN to connect to the program, such as using your phone to connect to your computer's WiFi, after setting the PAC to allow both your phone to use it. There may be a firewall prompt to allow access.
+# Address to bind the server to. 
+# Use "127.0.0.1" for local access only, "0.0.0.0" to allow access from other devices in the LAN.
+# 绑定地址。
+# 使用 "127.0.0.1" 仅限本机访问；使用 "0.0.0.0" 允许局域网内的其他设备连接。
 address = "127.0.0.1"
 
-# 服务器的端口号，如果与其他程序发生端口冲突时可以更改，其值应为1-65535，建议>1024。
-# The port number of the server, which can be changed in case of port conflicts with other programs, should have a value of 1-65535, with >1024 recommended.
+# Port number for the proxy server (1-65535).
+# 代理服务器端口号 (1-65535)。
 port = 7654
 
-# PAC文件中的代理主机。如供局域网使用，应设为安装了Snirect的设备在局域网中的IP。
-# The proxy host in the PAC file. If for LAN usage, it should be set to the IP of the device on the LAN where Snirect is installed.
+# Hostname used in the generated PAC file.
+# If using in a LAN, set this to the IP address of this machine.
+# PAC 文件中的代理主机名。
+# 如果需要在局域网内共享，请将其设置为本机的局域网 IP。
 pac_host = "127.0.0.1"

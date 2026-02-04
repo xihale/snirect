@@ -22,7 +22,7 @@ Checks for:
 	Run: func(cmd *cobra.Command, args []string) {
 		env := sysproxy.CheckEnv()
 		fmt.Println("Detected Environment:")
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println("------------------------------------------------------")
 
 		keys := make([]string, 0, len(env))
 		for k := range env {
@@ -33,7 +33,7 @@ Checks for:
 		for _, k := range keys {
 			fmt.Printf("  %s: %s\n", k, env[k])
 		}
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println("------------------------------------------------------")
 	},
 }
 

@@ -2,78 +2,50 @@ package cmd
 
 import (
 	"fmt"
-
 	"os"
-
 	"os/signal"
-
 	"path/filepath"
+	"time"
 
 	"snirect/internal/ca"
-
 	"snirect/internal/config"
-
 	"snirect/internal/logger"
-
 	"snirect/internal/proxy"
-
 	"snirect/internal/sysproxy"
-
-	"time"
 
 	"github.com/spf13/cobra"
 )
 
-func runProxy(cmd *cobra.Command) {
-
+func runProxy(cmd *cobra.Command) error {
 	// 1. Ensure config and get app data dir
-
 	appDir, err := config.EnsureConfig(false)
-
 	if err != nil {
-
-		fmt.Fprintf(os.Stderr, "Failed to initialize configuration: %v\n", err)
-
-		os.Exit(1)
-
+		return fmt.Errorf("failed to initialize configuration: %w", err)
 	}
 
 	configPath := filepath.Join(appDir, "config.toml")
-
 	rulesPath := filepath.Join(appDir, "rules.toml")
-
 	certDir := filepath.Join(appDir, "certs")
 
 	// Ensure restricted permissions
-
 	if err := os.MkdirAll(certDir, 0700); err != nil {
-
-		fmt.Fprintf(os.Stderr, "Failed to create secure cert dir: %v\n", err)
-
-		os.Exit(1)
-
+		return fmt.Errorf("failed to create secure cert dir: %w", err)
 	}
 
 	// 2. Load Config
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
-		fmt.Printf("Warning: Failed to load config.toml: %v. Using defaults.\n", err)
+		logger.Warn("Warning: Failed to load config.toml: %v. Using defaults.", err)
 		if cfg == nil {
-			fmt.Println("Critical error: Config file is invalid and defaults could not be loaded. Please delete config.toml to reset.")
-			os.Exit(1)
+			return fmt.Errorf("critical error: configuration is invalid and defaults could not be loaded")
 		}
 	}
 
 	// Override setproxy from config if flag is explicitly passed
-
 	shouldSetProxy := cfg.SetProxy
-
 	if cmd.Flags().Changed("set-proxy") {
-
 		val, _ := cmd.Flags().GetBool("set-proxy")
-
 		shouldSetProxy = val
-
 	}
 
 	// Init Logger
@@ -96,8 +68,9 @@ func runProxy(cmd *cobra.Command) {
 
 	certMgr, err := ca.NewCertManager(caCertPath, caKeyPath)
 	if err != nil {
-		logger.Fatal("Failed to initialize CA: %v", err)
+		return fmt.Errorf("failed to initialize CA: %w", err)
 	}
+	defer certMgr.Close()
 
 	logger.Info("正在启动 Snirect...")
 	logger.Info("配置文件加载自: %s", appDir)
@@ -113,7 +86,7 @@ func runProxy(cmd *cobra.Command) {
 			logger.Warn("Failed to install root CA: %v", err)
 			logger.Warn("You may need to install the certificate manually: %s", caCertPath)
 		} else if installed {
-			logger.Info("Root CA 重新安装成功！请重启浏览器以生效。")
+			logger.Info("Root CA 重新安装成功。请重启浏览器以生效。")
 		}
 	case "auto", "":
 		logger.Info("正在检查根 CA 是否已安装 (importca = auto)...")
@@ -122,7 +95,7 @@ func runProxy(cmd *cobra.Command) {
 			logger.Warn("安装根 CA 失败: %v", err)
 			logger.Warn("你可能需要手动安装证书: %s", caCertPath)
 		} else if installed {
-			logger.Info("Root CA 安装成功！请重启浏览器以生效。")
+			logger.Info("Root CA 安装成功。请重启浏览器以生效。")
 		}
 	default:
 		logger.Warn("无效的 importca 值: %q。预期为: auto, always, 或 never。按 auto 处理。", cfg.ImportCA)
@@ -132,7 +105,7 @@ func runProxy(cmd *cobra.Command) {
 			logger.Warn("安装根 CA 失败: %v", err)
 			logger.Warn("你可能需要手动安装证书: %s", caCertPath)
 		} else if installed {
-			logger.Info("Root CA 安装成功！请重启浏览器以生效。")
+			logger.Info("Root CA 安装成功。请重启浏览器以生效。")
 		}
 	}
 
@@ -146,9 +119,10 @@ func runProxy(cmd *cobra.Command) {
 	srv := proxy.NewProxyServer(cfg, rules, certMgr)
 
 	// 5. Start
+	serverErr := make(chan error, 1)
 	go func() {
 		if err := srv.Start(); err != nil {
-			logger.Fatal("Server failed: %v", err)
+			serverErr <- err
 		}
 	}()
 
@@ -164,8 +138,15 @@ func runProxy(cmd *cobra.Command) {
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
-	<-c
-	logger.Info("正在关机...")
+
+	select {
+	case err := <-serverErr:
+		return fmt.Errorf("server failed: %w", err)
+	case <-c:
+		logger.Info("正在关机...")
+	}
+
+	return nil
 }
 
 func printUsageInfo(port int) {
@@ -175,11 +156,11 @@ func printUsageInfo(port int) {
 	bold := "\033[1m"
 	reset := "\033[0m"
 
-	fmt.Printf("\n%s%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", bold, cyan, reset)
+	fmt.Printf("\n%s%s------------------------------------------------------%s\n", bold, cyan, reset)
 	fmt.Printf(" %sSnirect%s 正在运行，端口: %s%d%s\n", bold, reset, green, port, reset)
-	fmt.Printf("%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", cyan, reset)
+	fmt.Printf("%s------------------------------------------------------%s\n", cyan, reset)
 	fmt.Printf(" %s快速设置:%s\n", yellow, reset)
 	fmt.Printf("   - 启用系统代理:    %ssnirect set-proxy%s\n", green, reset)
 	fmt.Printf("   - 当前终端代理:    %seval $(snirect proxy-env)%s\n", green, reset)
-	fmt.Printf("%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n\n", cyan, reset)
+	fmt.Printf("%s------------------------------------------------------%s\n\n", cyan, reset)
 }

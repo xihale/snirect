@@ -10,7 +10,7 @@ import (
 	"snirect/internal/logger"
 )
 
-func uninstallServicePlatform() {
+func uninstallServicePlatform() error {
 	homeDir, _ := os.UserHomeDir()
 	plistPath := filepath.Join(homeDir, "Library", "LaunchAgents", "com.snirect.proxy.plist")
 
@@ -28,4 +28,5 @@ func uninstallServicePlatform() {
 			logger.Info("Removed plist file: %s", plistPath)
 		}
 	}
+	return nil
 }

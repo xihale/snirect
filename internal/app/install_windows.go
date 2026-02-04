@@ -19,7 +19,7 @@ func getBinPath() string {
 	return filepath.Join(localAppData, "Programs", "snirect", "snirect.exe")
 }
 
-func installServicePlatform(binPath string) {
+func installServicePlatform(binPath string) error {
 	taskName := "Snirect"
 
 	cmd := exec.Command("schtasks", "/Create", "/TN", taskName, "/TR", fmt.Sprintf(`"%s" --set-proxy`, binPath),
@@ -29,9 +29,10 @@ func installServicePlatform(binPath string) {
 	if err != nil {
 		logger.Warn("创建计划任务失败: %v, 输出: %s", err, string(output))
 		logger.Info("您可以手动创建启动任务或在登录时运行 snirect。")
-		return
+		return fmt.Errorf("failed to create scheduled task: %w", err)
 	}
 
 	logger.Info("已创建计划任务: %s", taskName)
-	logger.Info("Snirect 将在登录时自动启动。")
+	logger.Info("Snirect 安装成功。")
+	return nil
 }

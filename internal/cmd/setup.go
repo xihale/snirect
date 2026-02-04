@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"snirect/internal/app"
 	"snirect/internal/config"
-	"snirect/internal/logger"
 	"snirect/internal/sysproxy"
 	"time"
 
@@ -29,11 +28,12 @@ var installCertCmd = &cobra.Command{
 	Example: `  snirect install-cert     # 安装 CA 证书
   snirect ic               # 简写
   snirect cert-status      # 检查是否已安装`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := app.SetupCA(true); err != nil {
-			logger.Fatal("安装证书失败: %v\n\n请尝试以 sudo 或管理员权限运行。", err)
+			return fmt.Errorf("安装证书失败: %w\n\n请尝试以 sudo 或管理员权限运行。", err)
 		}
 		fmt.Println("✓ Root CA 安装成功！")
+		return nil
 	},
 }
 
@@ -54,17 +54,21 @@ var setProxyCmd = &cobra.Command{
 	Example: `  snirect set-proxy        # 启用系统代理
   snirect sp               # 简写
   snirect status           # 验证代理是否活跃`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		appDir, err := config.EnsureConfig(false)
 		if err != nil {
-			logger.Fatal("Failed to init config: %v", err)
+			return fmt.Errorf("failed to init config: %w", err)
 		}
-		cfg, _ := config.LoadConfig(filepath.Join(appDir, "config.toml"))
+		cfg, err := config.LoadConfig(filepath.Join(appDir, "config.toml"))
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
 		pacURL := fmt.Sprintf("http://127.0.0.1:%d/pac/?t=%d", cfg.Server.Port, time.Now().Unix())
 		sysproxy.SetPAC(pacURL)
-		fmt.Println("✓ 系统代理配置成功。")
+		fmt.Println("系统代理配置成功。")
 		fmt.Printf("  PAC 地址: %s\n", pacURL)
 		fmt.Println("\n注意: 某些应用可能需要重启才能生效。")
+		return nil
 	},
 }
 
@@ -83,7 +87,7 @@ var unsetProxyCmd = &cobra.Command{
   snirect up               # 简写`,
 	Run: func(cmd *cobra.Command, args []string) {
 		sysproxy.ClearPAC()
-		fmt.Println("✓ 系统代理已清除。")
+		fmt.Println("系统代理已清除。")
 		fmt.Println("您的系统现在将直接连接到互联网。")
 	},
 }
@@ -101,14 +105,15 @@ var resetConfigCmd = &cobra.Command{
 
 您的证书文件 (certs/ 目录下) 不会受到影响。`,
 	Example: `  snirect reset-config       # 重置为默认设置`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		appDir, err := config.EnsureConfig(true)
 		if err != nil {
-			logger.Fatal("重置配置失败: %v", err)
+			return fmt.Errorf("重置配置失败: %w", err)
 		}
-		fmt.Println("✓ 配置文件已重置为默认值。")
+		fmt.Println("配置文件已重置为默认值。")
 		fmt.Printf("  配置目录: %s\n", appDir)
 		fmt.Println("\n注意: 您的证书文件 (certs/ 目录下) 已被保留。")
+		return nil
 	},
 }
 
@@ -125,10 +130,10 @@ var certStatusCmd = &cobra.Command{
   - Windows: 用户证书存储 (Root) 中的 "Snirect Root CA"`,
 	Example: `  snirect cert-status      # 检查 CA 安装状态
   snirect cs               # 简写`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		appDir, err := config.EnsureConfig(false)
 		if err != nil {
-			logger.Fatal("Failed to init config: %v\n\nEnsure you have write permissions to the config directory.", err)
+			return fmt.Errorf("failed to init config: %w", err)
 		}
 
 		certDir := filepath.Join(appDir, "certs")
@@ -138,24 +143,25 @@ var certStatusCmd = &cobra.Command{
 		if _, err := os.Stat(caCertPath); os.IsNotExist(err) {
 			fmt.Printf("Certificate file not found: %s\n\n", caCertPath)
 			fmt.Println("Run 'snirect' first to generate the certificate.")
-			return
+			return nil
 		}
 
 		installed, err := sysproxy.CheckCertStatus(caCertPath)
 		if err != nil {
-			logger.Fatal("Failed to check certificate status: %v", err)
+			return fmt.Errorf("failed to check certificate status: %w", err)
 		}
 
 		if installed {
 			fmt.Println("状态: 根 CA 已安装在系统信任库中")
 			fmt.Printf("证书路径: %s\n", caCertPath)
-			fmt.Println("\n✓ 浏览器现在应该信任 Snirect 的 HTTPS 证书。")
+			fmt.Println("\n浏览器现在应该信任 Snirect 的 HTTPS 证书。")
 		} else {
 			fmt.Println("状态: 根 CA 尚未安装在系统信任库中")
 			fmt.Printf("证书路径: %s\n", caCertPath)
-			fmt.Println("\n⚠ 浏览器访问 HTTPS 网站时会显示证书警告。")
+			fmt.Println("\n浏览器访问 HTTPS 网站时会显示证书警告。")
 			fmt.Println("\n要进行安装，请运行: snirect install-cert")
 		}
+		return nil
 	},
 }
 
@@ -174,19 +180,20 @@ var uninstallCertCmd = &cobra.Command{
 查看当前状态：snirect cert-status`,
 	Example: `  snirect uninstall-cert   # 移除 CA 证书
   snirect uc               # 简写`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		appDir, err := config.EnsureConfig(false)
 		if err != nil {
-			logger.Fatal("Failed to init config: %v", err)
+			return fmt.Errorf("failed to init config: %w", err)
 		}
 
 		certDir := filepath.Join(appDir, "certs")
 		caCertPath := filepath.Join(certDir, "root.crt")
 
 		if err := sysproxy.UninstallCert(caCertPath); err != nil {
-			logger.Fatal("卸载证书失败: %v\n\n您可能需要手动通过系统的证书管理器将其删除。", err)
+			return fmt.Errorf("卸载证书失败: %w\n\n您可能需要手动通过系统的证书管理器将其删除。", err)
 		}
-		fmt.Println("✓ 根 CA 已从系统信任库中移除。")
+		fmt.Println("根 CA 已从系统信任库中移除。")
+		return nil
 	},
 }
 

@@ -8,7 +8,7 @@ import (
 	"snirect/internal/logger"
 )
 
-func uninstallServicePlatform() {
+func uninstallServicePlatform() error {
 	homeDir, _ := os.UserHomeDir()
 
 	logger.Info("Stopping service...")
@@ -24,4 +24,5 @@ func uninstallServicePlatform() {
 		}
 		runSystemctl("daemon-reload")
 	}
+	return nil
 }

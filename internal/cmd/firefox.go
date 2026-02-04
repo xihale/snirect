@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"snirect/internal/config"
-	"snirect/internal/logger"
 	"snirect/internal/sysproxy"
 
 	"github.com/spf13/cobra"
@@ -32,13 +31,13 @@ var firefoxCertCmd = &cobra.Command{
 	Example: `  snirect firefox-cert         # 安装证书到 Firefox
   snirect firefox-cert --check # 检查 Firefox 证书状态
   snirect firefox-cert --remove # 从 Firefox 移除证书`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		check, _ := cmd.Flags().GetBool("check")
 		remove, _ := cmd.Flags().GetBool("remove")
 
 		appDir, err := config.EnsureConfig(false)
 		if err != nil {
-			logger.Fatal("Failed to init config: %v", err)
+			return fmt.Errorf("failed to init config: %w", err)
 		}
 
 		certPath := filepath.Join(appDir, "certs", "root.crt")
@@ -46,32 +45,32 @@ var firefoxCertCmd = &cobra.Command{
 		if check {
 			installed, err := sysproxy.CheckFirefoxCert()
 			if err != nil {
-				logger.Fatal("检查 Firefox 证书失败: %v", err)
+				return fmt.Errorf("检查 Firefox 证书失败: %w", err)
 			}
 			if installed {
-				fmt.Println("✓ Snirect Root CA 已安装在 Firefox 中")
+				fmt.Println("Snirect Root CA 已安装在 Firefox 中")
 			} else {
-				fmt.Println("✗ Snirect Root CA 未安装在 Firefox 中")
+				fmt.Println("Snirect Root CA 未安装在 Firefox 中")
 				fmt.Println("\n运行以下命令安装: snirect firefox-cert")
 			}
-			return
+			return nil
 		}
 
 		if remove {
 			if err := sysproxy.UninstallFirefoxCert(); err != nil {
-				logger.Fatal("从 Firefox 移除证书失败: %v", err)
+				return fmt.Errorf("从 Firefox 移除证书失败: %w", err)
 			}
-			fmt.Println("✓ 证书已从 Firefox 移除")
-			return
+			fmt.Println("证书已从 Firefox 移除")
+			return nil
 		}
 
 		// Install
 		fmt.Println("正在安装证书到 Firefox...")
 		if err := sysproxy.InstallFirefoxCert(certPath); err != nil {
-			logger.Fatal("安装证书到 Firefox 失败: %v\n\n可能的解决方案:\n  1. 确保已安装 certutil (libnss3-tools)\n  2. 关闭 Firefox 浏览器\n  3. 使用脚本: ./scripts/fix-firefox-cert.sh", err)
+			return fmt.Errorf("安装证书到 Firefox 失败: %w\n\n可能的解决方案:\n  1. 确保已安装 certutil (libnss3-tools)\n  2. 关闭 Firefox 浏览器\n  3. 使用脚本: ./scripts/fix-firefox-cert.sh", err)
 		}
 
-		fmt.Println("\n✓ 证书安装成功！")
+		fmt.Println("\n证书安装成功！")
 		fmt.Println("\n下一步:")
 		fmt.Println("  1. 重启 Firefox 浏览器")
 		fmt.Println("  2. 启动代理: snirect -s")
@@ -79,6 +78,7 @@ var firefoxCertCmd = &cobra.Command{
 		fmt.Println("\n验证证书:")
 		fmt.Println("  Firefox → 设置 → 隐私与安全 → 证书 → 查看证书")
 		fmt.Println("  搜索 'Snirect' 应该能看到 'Snirect Root CA'")
+		return nil
 	},
 }
 

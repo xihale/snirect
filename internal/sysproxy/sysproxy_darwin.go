@@ -46,7 +46,7 @@ func installCertPlatform(certPath string) (bool, error) {
 		return false, fmt.Errorf("安装证书失败: %v，请手动安装证书: %s", err, certPath)
 	}
 
-	logger.Info("证书安装成功！")
+	logger.Info("证书安装成功。")
 	return true, nil
 }
 
@@ -101,7 +101,7 @@ func uninstallCertPlatform(certPath string) error {
 		return fmt.Errorf("卸载证书失败: %v, 输出: %s", err, string(output))
 	}
 
-	logger.Info("证书卸载成功！")
+	logger.Info("证书卸载成功。")
 	return nil
 }
 
@@ -170,8 +170,3 @@ func getNetworkInterfaces() ([]string, error) {
 	return interfaces, nil
 }
 
-// HasTool checks if a system tool is available in PATH
-func HasTool(name string) bool {
-	_, err := exec.LookPath(name)
-	return err == nil
-}

@@ -8,7 +8,8 @@ import (
 	"snirect/internal/sysproxy"
 )
 
-func Uninstall() {
+// Uninstall removes the binary, configuration, and service.
+func Uninstall() error {
 	logger.Info("正在开始卸载...")
 
 	uninstallServicePlatform()
@@ -44,6 +45,7 @@ func Uninstall() {
 	removeCompletions()
 
 	logger.Info("卸载完成。")
+	return nil
 }
 
 func removeCompletions() {

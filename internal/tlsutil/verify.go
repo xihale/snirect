@@ -2,22 +2,22 @@ package tlsutil
 
 import (
 	"crypto/x509"
+	"snirect/internal/config"
+	"snirect/internal/logger"
 
 	"golang.org/x/net/publicsuffix"
-	"snirect/internal/logger"
 )
 
 // MatchHostname verifies that the certificate matches the given hostname.
-// policy can be "strict" (string), true (bool, implies loose), or false (bool, skip).
-func MatchHostname(cert *x509.Certificate, hostname string, policy interface{}) bool {
+func MatchHostname(cert *x509.Certificate, hostname string, policy config.CertPolicy) bool {
 	// 1. Strict Check (Standard Library)
 	err := cert.VerifyHostname(hostname)
 	if err == nil {
 		return true
 	}
 
-	// If policy is "strict", we fail if VerifyHostname failed
-	if p, ok := policy.(string); ok && p == "strict" {
+	// If policy is strict, we fail if VerifyHostname failed
+	if policy.Strict {
 		return false
 	}
 

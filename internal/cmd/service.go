@@ -22,13 +22,16 @@ manually install it with: snirect install-cert`,
 	Example: `  snirect install          # Install binary and service
   snirect i                # Short alias
   snirect install --help   # More details`,
-	Run: func(cmd *cobra.Command, args []string) {
-		app.Install()
-		fmt.Println("\n✓ Snirect installed successfully!")
-		fmt.Println("\nNext steps:")
-		fmt.Println("  1. snirect install-cert    # Install CA certificate (optional, will auto-install on first run)")
-		fmt.Println("  2. snirect -s              # Start proxy with system proxy")
-		fmt.Println("  3. snirect status          # Check installation status")
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := app.Install(); err != nil {
+			return err
+		}
+		fmt.Println("\nSnirect 安装成功。")
+		fmt.Println("\n后续步骤:")
+		fmt.Println("  1. snirect install-cert    # 安装 CA 证书 (可选，首次运行会自动安装)")
+		fmt.Println("  2. snirect -s              # 启动代理并自动设置系统代理")
+		fmt.Println("  3. snirect status          # 检查安装状态")
+		return nil
 	},
 }
 

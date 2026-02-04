@@ -37,7 +37,7 @@ func SetupCA(installToSystem bool) error {
 			return err
 		}
 		if installed {
-			logger.Info("Root CA 安装成功！")
+			logger.Info("Root CA 安装成功。")
 			logger.Info("重要提示：请重启浏览器或相关应用，以使证书生效。")
 		}
 	}

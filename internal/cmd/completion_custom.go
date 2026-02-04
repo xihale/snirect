@@ -33,11 +33,11 @@ After installation, restart your shell or run the temporary usage command.`,
 	DisableFlagsInUseLine: true,
 	ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
 	Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		shell := args[0]
 
 		if installCompletion {
-			installShellCompletion(shell, cmd)
+			return installShellCompletion(shell, cmd)
 		} else {
 			switch shell {
 			case "bash":
@@ -50,6 +50,7 @@ After installation, restart your shell or run the temporary usage command.`,
 				cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
 			}
 		}
+		return nil
 	},
 }
 
@@ -58,11 +59,10 @@ func init() {
 	RootCmd.AddCommand(completionCmd)
 }
 
-func installShellCompletion(shell string, cmd *cobra.Command) {
+func installShellCompletion(shell string, cmd *cobra.Command) error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to get user home dir: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to get user home dir: %w", err)
 	}
 
 	var path string
@@ -126,18 +126,17 @@ func installShellCompletion(shell string, cmd *cobra.Command) {
 	}
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create completion file at %s: %v\n", path, err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create completion file at %s: %w", path, err)
 	}
 	if errGen != nil {
-		fmt.Fprintf(os.Stderr, "Failed to generate completion content: %v\n", errGen)
-		os.Exit(1)
+		return fmt.Errorf("failed to generate completion content: %w", errGen)
 	}
 
 	fmt.Printf("Completion script installed to: %s\n", path)
 	if shell == "bash" || shell == "zsh" {
 		fmt.Println("Please restart your shell for changes to take effect.")
 	}
+	return nil
 }
 
 func getBashCompletionPath(homeDir string) string {

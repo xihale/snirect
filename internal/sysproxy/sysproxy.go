@@ -7,9 +7,17 @@ import (
 	"encoding/pem"
 	"errors"
 	"os"
+	"os/exec"
 	"runtime"
 )
 
+// HasTool checks if a system tool is available in PATH
+func HasTool(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
+// GetCertFingerprint returns the SHA256 fingerprint of a certificate file.
 func GetCertFingerprint(certPath string) (string, error) {
 	data, err := os.ReadFile(certPath)
 	if err != nil {
@@ -18,6 +26,7 @@ func GetCertFingerprint(certPath string) (string, error) {
 	return GetCertFingerprintFromPEM(data)
 }
 
+// GetCertFingerprintFromPEM returns the SHA256 fingerprint of a PEM-encoded certificate.
 func GetCertFingerprintFromPEM(pemData []byte) (string, error) {
 	block, _ := pem.Decode(pemData)
 	if block == nil {
@@ -27,6 +36,7 @@ func GetCertFingerprintFromPEM(pemData []byte) (string, error) {
 	return hex.EncodeToString(hash[:]), nil
 }
 
+// GetCertFingerprintSHA1 returns the SHA1 fingerprint of a certificate file.
 func GetCertFingerprintSHA1(certPath string) (string, error) {
 	data, err := os.ReadFile(certPath)
 	if err != nil {
@@ -40,8 +50,7 @@ func GetCertFingerprintSHA1(certPath string) (string, error) {
 	return hex.EncodeToString(hash[:]), nil
 }
 
-// CheckEnv returns a map of detected environment details.
-// Platform-specific implementations in sysproxy_*.go files.
+// CheckEnv returns a map of detected system environment details.
 func CheckEnv() map[string]string {
 	env := make(map[string]string)
 	env["OS"] = runtime.GOOS
@@ -49,41 +58,33 @@ func CheckEnv() map[string]string {
 	return env
 }
 
-// InstallCert attempts to install the CA certificate to the system trust store.
-// Returns (true, nil) if certificate was newly installed.
-// Returns (false, nil) if certificate was already present.
-// Platform-specific implementations in sysproxy_*.go files.
+// InstallCert installs the CA certificate to the system trust store.
+// Returns true if newly installed, false if already present.
 func InstallCert(certPath string) (bool, error) {
 	return installCertPlatform(certPath)
 }
 
-// ForceInstallCert forces installation of the CA certificate even if already present.
-// Returns (true, nil) if successful.
-// Platform-specific implementations in sysproxy_*.go files.
+// ForceInstallCert forces re-installation of the CA certificate.
 func ForceInstallCert(certPath string) (bool, error) {
 	return forceInstallCertPlatform(certPath)
 }
 
 // UninstallCert removes the CA certificate from the system trust store.
-// Platform-specific implementations in sysproxy_*.go files.
 func UninstallCert(certPath string) error {
 	return uninstallCertPlatform(certPath)
 }
 
 // CheckCertStatus checks if the CA certificate is installed in the system trust store.
-// Returns true if installed, false otherwise. Platform-specific implementations.
 func CheckCertStatus(certPath string) (bool, error) {
 	return checkCertStatusPlatform(certPath)
 }
 
 // SetPAC sets the system proxy auto-config URL.
-// Platform-specific implementations in sysproxy_*.go files.
 func SetPAC(pacURL string) {
 	setPACPlatform(pacURL)
 }
 
 // ClearPAC removes the system proxy auto-config URL.
-// Platform-specific implementations in sysproxy_*.go files.
 func ClearPAC() {
 	clearPACPlatform()
 }

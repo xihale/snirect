@@ -188,7 +188,7 @@ func uninstallCertPlatform(certPath string) error {
 	}
 
 	if removed {
-		logger.Info("证书卸载成功！")
+		logger.Info("证书卸载成功。")
 	} else {
 		logger.Info("在系统信任库中未找到证书")
 	}
@@ -205,14 +205,14 @@ func setPACPlatform(pacURL string) {
 	de := getDesktopEnvironment()
 	switch de {
 	case "gnome":
-		if hasTool("gsettings") {
+		if HasTool("gsettings") {
 			logger.Info("Detected GNOME-like environment, setting proxy via gsettings...")
 			setGnomeProxy(pacURL)
 		} else {
 			logger.Warn("Detected GNOME-like environment but 'gsettings' not found. Cannot set proxy.")
 		}
 	case "kde":
-		if hasTool("kwriteconfig5") {
+		if HasTool("kwriteconfig5") {
 			logger.Info("Detected KDE, setting proxy via kwriteconfig5...")
 			setKDEProxy(pacURL)
 		} else {
@@ -227,11 +227,11 @@ func clearPACPlatform() {
 	de := getDesktopEnvironment()
 	switch de {
 	case "gnome":
-		if hasTool("gsettings") {
+		if HasTool("gsettings") {
 			clearGnomeProxy()
 		}
 	case "kde":
-		if hasTool("kwriteconfig5") {
+		if HasTool("kwriteconfig5") {
 			clearKDEProxy()
 		}
 	}
@@ -253,16 +253,7 @@ func getDesktopEnvironment() string {
 	return xdg
 }
 
-// HasTool checks if a system tool is available in PATH
-func HasTool(name string) bool {
-	_, err := exec.LookPath(name)
-	return err == nil
-}
 
-// Deprecated: use HasTool instead
-func hasTool(name string) bool {
-	return HasTool(name)
-}
 
 func setGnomeProxy(pacURL string) {
 	runCommand("gsettings", "set", "org.gnome.system.proxy", "mode", "auto")
@@ -278,7 +269,7 @@ func setKDEProxy(pacURL string) {
 	runCommand("kwriteconfig5", "--file", "kioslaverc", "--group", "Proxy Settings", "--key", "ProxyType", "2")
 	runCommand("kwriteconfig5", "--file", "kioslaverc", "--group", "Proxy Settings", "--key", "Proxy Config Script", pacURL)
 
-	if hasTool("dbus-send") {
+	if HasTool("dbus-send") {
 		runCommand("dbus-send", "--type=signal", "/KIO/Scheduler", "org.kde.KIO.Scheduler.reparseSlaveConfiguration", "string:''")
 	}
 }
@@ -287,7 +278,7 @@ func clearKDEProxy() {
 	runCommand("kwriteconfig5", "--file", "kioslaverc", "--group", "Proxy Settings", "--key", "ProxyType", "0")
 	runCommand("kwriteconfig5", "--file", "kioslaverc", "--group", "Proxy Settings", "--key", "Proxy Config Script", "")
 
-	if hasTool("dbus-send") {
+	if HasTool("dbus-send") {
 		runCommand("dbus-send", "--type=signal", "/KIO/Scheduler", "org.kde.KIO.Scheduler.reparseSlaveConfiguration", "string:''")
 	}
 }

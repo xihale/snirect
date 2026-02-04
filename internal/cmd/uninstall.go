@@ -18,8 +18,8 @@ var uninstallCmd = &cobra.Command{
   - Removes shell completions`,
 	Example: `  snirect uninstall        # Full removal
   snirect rm               # Short alias`,
-	Run: func(cmd *cobra.Command, args []string) {
-		app.Uninstall()
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return app.Uninstall()
 	},
 }
 
