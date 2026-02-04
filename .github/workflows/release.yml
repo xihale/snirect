@@ -25,6 +25,7 @@ jobs:
         with:
           go-version-file: 'go.mod'
           cache: true
+          cache-dependency-path: go.sum
 
       - name: Build and Package
         run: make cross-all
