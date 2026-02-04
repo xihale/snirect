@@ -27,8 +27,14 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
+      - name: Install UPX
+        run: sudo apt-get update && sudo apt-get install -y upx-ucl
+
       - name: Build and Package
-        run: make cross-all
+        run: |
+          make cross-all
+          make upx
+          make checksum
 
       - name: Upload Assets to Release
         uses: softprops/action-gh-release@v2

@@ -26,4 +26,6 @@ jobs:
         run: go mod download
 
       - name: Build All Platforms
-        run: make cross-all
+        run: |
+          make cross-all
+          make checksum
