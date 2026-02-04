@@ -27,6 +27,14 @@ func Uninstall() {
 
 	appDir, _ := config.GetAppDataDir()
 	if _, err := os.Stat(appDir); err == nil {
+		caCertPath := filepath.Join(appDir, "certs", "root.crt")
+		if _, err := os.Stat(caCertPath); err == nil {
+			logger.Info("Removing Root CA from system trust store...")
+			if err := sysproxy.UninstallCert(caCertPath); err != nil {
+				logger.Warn("Failed to remove certificate from system trust store: %v", err)
+			}
+		}
+
 		logger.Info("Removing configuration directory: %s", appDir)
 		if err := os.RemoveAll(appDir); err != nil {
 			logger.Warn("Failed to remove config dir: %v", err)
