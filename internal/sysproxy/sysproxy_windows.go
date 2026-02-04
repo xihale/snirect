@@ -4,7 +4,6 @@ package sysproxy
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -25,12 +24,7 @@ func checkEnvPlatform(env map[string]string) {
 }
 
 func installCertPlatform(certPath string) (bool, error) {
-	certData, err := os.ReadFile(certPath)
-	if err != nil {
-		return false, fmt.Errorf("读取证书失败: %v", err)
-	}
-
-	if isCertInstalled(certData) {
+	if isCertInstalled(certPath) {
 		logger.Info("根证书已安装在系统信任库中")
 		return false, nil
 	}
@@ -47,25 +41,20 @@ func installCertPlatform(certPath string) (bool, error) {
 	return true, nil
 }
 
-func isCertInstalled(certData []byte) bool {
+func isCertInstalled(certPath string) bool {
 	cmd := exec.Command("certutil", "-user", "-verifystore", "Root", "Snirect Root CA")
-	output, err := cmd.Output()
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+
+	sha1, err := GetCertFingerprintSHA1(certPath)
 	if err != nil {
 		return false
 	}
 
-	outputStr := string(output)
-	if !strings.Contains(outputStr, "Snirect Root CA") {
-		return false
-	}
-
-	cmd = exec.Command("certutil", "-user", "-store", "Root")
-	output, err = cmd.Output()
-	if err != nil {
-		return false
-	}
-
-	return strings.Contains(string(output), "Snirect Root CA")
+	cmd = exec.Command("certutil", "-user", "-verifystore", "Root", sha1)
+	err = cmd.Run()
+	return err == nil
 }
 
 func forceInstallCertPlatform(certPath string) (bool, error) {
@@ -95,12 +84,7 @@ func uninstallCertPlatform(certPath string) error {
 }
 
 func checkCertStatusPlatform(certPath string) (bool, error) {
-	certData, err := os.ReadFile(certPath)
-	if err != nil {
-		return false, fmt.Errorf("读取证书失败: %v", err)
-	}
-
-	installed := isCertInstalled(certData)
+	installed := isCertInstalled(certPath)
 	return installed, nil
 }
 

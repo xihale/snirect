@@ -77,6 +77,31 @@ func (cm *CertManager) loadCA(certPEM, keyPEM []byte) error {
 		return err
 	}
 
+	switch k := key.(type) {
+	case *rsa.PrivateKey:
+		if cert.PublicKeyAlgorithm != x509.RSA {
+			return errors.New("certificate public key algorithm mismatch (expected RSA)")
+		}
+		pubKey, ok := cert.PublicKey.(*rsa.PublicKey)
+		if !ok {
+			return errors.New("certificate public key type mismatch")
+		}
+		if pubKey.N.Cmp(k.N) != 0 || pubKey.E != k.E {
+			return errors.New("private key does not match certificate public key")
+		}
+	case *ecdsa.PrivateKey:
+		if cert.PublicKeyAlgorithm != x509.ECDSA {
+			return errors.New("certificate public key algorithm mismatch (expected ECDSA)")
+		}
+		pubKey, ok := cert.PublicKey.(*ecdsa.PublicKey)
+		if !ok {
+			return errors.New("certificate public key type mismatch")
+		}
+		if pubKey.X.Cmp(k.X) != 0 || pubKey.Y.Cmp(k.Y) != 0 {
+			return errors.New("private key does not match certificate public key")
+		}
+	}
+
 	cm.RootCert = cert
 	cm.RootKey = key
 

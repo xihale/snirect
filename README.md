@@ -148,7 +148,11 @@ FOR /F %i IN ('snirect.exe proxy-env') DO %i
 snirect cert-status      # Check if CA is installed
 snirect install-cert     # Install CA certificate
 snirect uninstall-cert   # Remove CA certificate
+snirect firefox-cert     # Install CA to Firefox (recommended for Firefox users)
 ```
+
+**⚠️ Firefox 用户注意**: Firefox 使用独立证书存储，运行 `snirect install-cert` 后仍可能显示证书警告。
+请使用 `snirect firefox-cert` 安装证书到 Firefox。
 
 ### All Available Commands
 
@@ -213,6 +217,86 @@ Some rules (Google/YouTube) use third-party public proxy IPs that require `check
 | "Port already in use" | Change `server.port` in config.toml |
 | "Proxy not working" | Run `snirect status` to check |
 | "Can't access some sites" | Check `rules.toml` or run `make update-rules` |
+
+### 浏览器证书安装（重要）
+
+**⚠️ 注意：不同浏览器使用不同的证书存储机制**
+
+运行 `snirect install-cert` 后：
+- **Chrome/Edge/Brave/Safari** 会自动信任证书（使用系统证书存储）
+- **Firefox 系浏览器**（Firefox、Zen Browser、Waterfox、LibreWolf、Floorp）需要手动安装证书
+
+#### Firefox 系浏览器证书安装
+
+Firefox 系浏览器使用独立的 NSS 证书数据库，不读取系统信任库。即使系统证书已安装，浏览器仍会显示证书警告。
+
+**方法 1：使用内置命令（推荐）**
+```bash
+# 自动安装到所有 Firefox 系浏览器
+snirect firefox-cert
+
+# 检查是否已安装
+snirect firefox-cert --check
+
+# 从浏览器移除证书
+snirect firefox-cert --remove
+```
+
+**方法 2：GUI 手动导入**
+
+1. 打开 Firefox 设置：`about:preferences#privacy`
+2. 滚动到底部，点击 **"查看证书"**
+3. 选择 **"证书颁发机构"** 标签
+4. 点击 **"导入"**
+5. 选择证书文件：
+   - Linux/macOS: `~/.config/snirect/certs/root.crt`
+   - Windows: `%APPDATA%\snirect\certs\root.crt`
+6. 勾选 **"信任由此证书颁发机构来标识网站"**
+7. 点击 "确定"
+8. 重启浏览器
+
+**故障排除**
+
+如果遇到 `SEC_ERROR_REUSED_ISSUER_AND_SERIAL` 错误（证书序列号冲突）：
+
+```bash
+# 先删除旧证书
+snirect firefox-cert --remove
+
+# 重新安装
+snirect firefox-cert
+```
+
+#### Chrome/Edge/Brave 证书安装
+
+这些浏览器通常使用系统证书存储，运行 `snirect install-cert` 后会自动信任。
+
+如需手动导入：
+- **Chrome:** 访问 `chrome://settings/certificates` → "授权中心" → "导入"
+- **Edge:** 访问 `edge://settings/privacy/manageCertificates`
+- **Brave:** 访问 `brave://settings/certificates`
+
+#### 验证证书安装
+
+**测试证书是否生效：**
+```bash
+# 1. 启动代理
+snirect -s
+
+# 2. 在浏览器中访问 https://www.google.com
+#    点击地址栏左侧的锁图标 → "连接是安全的" → "证书有效"
+#    应该显示：颁发者 "Snirect Root CA"
+```
+
+**检查 Firefox 证书列表：**
+1. 访问 `about:preferences#privacy`
+2. 点击 "查看证书" → "证书颁发机构"
+3. 搜索 "Snirect"，应该看到 "Snirect Root CA"
+
+**检查 Chrome 证书列表：**
+1. 访问 `chrome://settings/certificates`
+2. 选择 "授权中心" 标签
+3. 搜索 "Snirect"，应该看到 "Snirect Root CA"
 
 ---
 

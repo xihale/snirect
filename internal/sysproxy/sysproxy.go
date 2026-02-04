@@ -1,8 +1,44 @@
 package sysproxy
 
 import (
+	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/pem"
+	"errors"
+	"os"
 	"runtime"
 )
+
+func GetCertFingerprint(certPath string) (string, error) {
+	data, err := os.ReadFile(certPath)
+	if err != nil {
+		return "", err
+	}
+	return GetCertFingerprintFromPEM(data)
+}
+
+func GetCertFingerprintFromPEM(pemData []byte) (string, error) {
+	block, _ := pem.Decode(pemData)
+	if block == nil {
+		return "", errors.New("failed to parse certificate PEM")
+	}
+	hash := sha256.Sum256(block.Bytes)
+	return hex.EncodeToString(hash[:]), nil
+}
+
+func GetCertFingerprintSHA1(certPath string) (string, error) {
+	data, err := os.ReadFile(certPath)
+	if err != nil {
+		return "", err
+	}
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return "", errors.New("failed to parse certificate PEM")
+	}
+	hash := sha1.Sum(block.Bytes)
+	return hex.EncodeToString(hash[:]), nil
+}
 
 // CheckEnv returns a map of detected environment details.
 // Platform-specific implementations in sysproxy_*.go files.

@@ -43,16 +43,17 @@ func installCertPlatform(certPath string) (bool, error) {
 	logger.Info("正在安装证书: %s", certPath)
 
 	// 优先使用 trust 工具 (p11-kit)
+	// 优先使用 trust 工具 (p11-kit)
 	if path, err := exec.LookPath("trust"); err == nil {
 		logger.Info("正在使用 trust 工具安装证书...")
-		cmd := exec.Command("sudo", path, "anchor", certPath)
+		cmd := exec.Command("sudo", path, "anchor", "--store", certPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
+		logger.Info("执行命令: sudo %s anchor --store %s", path, certPath)
 		if err := cmd.Run(); err != nil {
-			return false, fmt.Errorf("使用 trust 工具安装证书失败 (错误 13 可能表示权限问题或不支持的格式): %v\n请尝试手动运行: sudo trust anchor %s", err, certPath)
+			return false, fmt.Errorf("使用 trust 工具安装证书失败: %v\n请尝试手动运行: sudo trust anchor --store %s", err, certPath)
 		}
 
-		// 某些系统可能需要显式执行 extract
 		if _, err := exec.LookPath("update-ca-trust"); err == nil {
 			exec.Command("sudo", "update-ca-trust", "extract").Run()
 		}
@@ -63,7 +64,6 @@ func installCertPlatform(certPath string) (bool, error) {
 		return false, fmt.Errorf("使用 trust 工具安装后仍未检测到证书。请尝试手动安装。")
 	}
 
-	// 如果没有 trust 工具，回退到传统的路径检测
 	logger.Info("未找到 trust 工具，尝试传统安装方式...")
 	var destPath string
 	var updateCmd string
@@ -167,17 +167,7 @@ func uninstallCertPlatform(certPath string) error {
 		}
 	}
 
-	if path, err := exec.LookPath("trust"); err == nil {
-		logger.Info("正在使用 trust 工具从信任库中移除证书...")
-		cmd := exec.Command("sudo", path, "anchor", "--remove", certPath)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			logger.Warn("使用 trust 移除证书失败: %v", err)
-		} else {
-			removed = true
-		}
-	} else if path, err := exec.LookPath("update-ca-certificates"); err == nil {
+	if path, err := exec.LookPath("update-ca-certificates"); err == nil {
 		logger.Info("正在更新 CA 证书...")
 		upCmd := exec.Command("sudo", path)
 		upCmd.Stdout = os.Stdout

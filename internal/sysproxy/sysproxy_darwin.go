@@ -28,12 +28,7 @@ func checkEnvPlatform(env map[string]string) {
 }
 
 func installCertPlatform(certPath string) (bool, error) {
-	certData, err := os.ReadFile(certPath)
-	if err != nil {
-		return false, fmt.Errorf("failed to read certificate: %v", err)
-	}
-
-	if isCertInstalled(certData) {
+	if isCertInstalled(certPath) {
 		logger.Info("根证书已安装在系统信任库中")
 		return false, nil
 	}
@@ -55,7 +50,12 @@ func installCertPlatform(certPath string) (bool, error) {
 	return true, nil
 }
 
-func isCertInstalled(certData []byte) bool {
+func isCertInstalled(certPath string) bool {
+	fingerprint, err := GetCertFingerprint(certPath)
+	if err != nil {
+		return false
+	}
+
 	cmd := exec.Command("security", "find-certificate", "-a", "-c", "Snirect Root CA", "-p")
 	output, err := cmd.Output()
 	if err != nil {
@@ -63,14 +63,14 @@ func isCertInstalled(certData []byte) bool {
 	}
 
 	installedCerts := strings.Split(string(output), "-----END CERTIFICATE-----")
-	certStr := string(certData)
 
 	for _, installedCert := range installedCerts {
 		if strings.TrimSpace(installedCert) == "" {
 			continue
 		}
-		installedCert = strings.TrimSpace(installedCert) + "\n-----END CERTIFICATE-----\n"
-		if installedCert == certStr {
+		pemBlock := strings.TrimSpace(installedCert) + "\n-----END CERTIFICATE-----\n"
+		installedFingerprint, err := GetCertFingerprintFromPEM([]byte(pemBlock))
+		if err == nil && installedFingerprint == fingerprint {
 			return true
 		}
 	}
@@ -106,12 +106,7 @@ func uninstallCertPlatform(certPath string) error {
 }
 
 func checkCertStatusPlatform(certPath string) (bool, error) {
-	certData, err := os.ReadFile(certPath)
-	if err != nil {
-		return false, fmt.Errorf("读取证书失败: %v", err)
-	}
-
-	installed := isCertInstalled(certData)
+	installed := isCertInstalled(certPath)
 	return installed, nil
 }
 
