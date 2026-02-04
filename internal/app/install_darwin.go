@@ -5,7 +5,6 @@ package app
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"snirect/internal/logger"
 )
