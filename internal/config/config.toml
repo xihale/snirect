@@ -51,17 +51,17 @@ ipv6 = true
 # [EDNS Client Subnet (ECS)]
 # Provides your network subnet info to DNS servers to get geographically closer IP results.
 # Options:
-#   "auto"   - (Default) Automatically generate based on your public IP.
+#   "auto"   - Automatically generate based on your public IP.
 #   "CIDR"   - Use a specific subnet (e.g., "218.102.0.0/24").
-#   ""       - Disable ECS.
+#   ""       - (Default) Disable ECS.
 #
 # EDNS 客户端子网 (ECS)
 # 向 DNS 服务器提供您的子网信息，以便获取地理位置更近的解析结果。
 # 可选值:
-#   "auto"   - (默认) 根据您的公网 IP 自动生成。
+#   "auto"   - 根据您的公网 IP 自动生成。
 #   "子网"   - 使用指定的 CIDR 子网 (例如 "218.102.0.0/24")。
-#   ""       - 禁用 ECS 功能。
-ecs = "auto"
+#   ""       - (默认) 禁用 ECS 功能。
+ecs = ""
 
 # [DNS Settings]
 # Custom DNS resolution settings.
