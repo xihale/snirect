@@ -35,84 +35,101 @@ func checkEnvPlatform(env map[string]string) {
 }
 
 func installCertPlatform(certPath string) (bool, error) {
-	certData, err := os.ReadFile(certPath)
-	if err != nil {
-		return false, fmt.Errorf("failed to read certificate: %v", err)
-	}
-
-	if isCertInstalled(certData) {
+	if isCertInstalled(certPath) {
 		logger.Info("根证书已安装在系统信任库中")
 		return false, nil
 	}
 
 	logger.Info("正在安装证书: %s", certPath)
 
+	// 优先使用 trust 工具 (p11-kit)
+	if path, err := exec.LookPath("trust"); err == nil {
+		logger.Info("正在使用 trust 工具安装证书...")
+		cmd := exec.Command("sudo", path, "anchor", certPath)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return false, fmt.Errorf("使用 trust 工具安装证书失败 (错误 13 可能表示权限问题或不支持的格式): %v\n请尝试手动运行: sudo trust anchor %s", err, certPath)
+		}
+
+		// 某些系统可能需要显式执行 extract
+		if _, err := exec.LookPath("update-ca-trust"); err == nil {
+			exec.Command("sudo", "update-ca-trust", "extract").Run()
+		}
+
+		if isCertInstalled(certPath) {
+			return true, nil
+		}
+		return false, fmt.Errorf("使用 trust 工具安装后仍未检测到证书。请尝试手动安装。")
+	}
+
+	// 如果没有 trust 工具，回退到传统的路径检测
+	logger.Info("未找到 trust 工具，尝试传统安装方式...")
 	var destPath string
 	var updateCmd string
 	var updateArgs []string
 
-	if path, err := exec.LookPath("trust"); err == nil {
-		cmd := exec.Command("sudo", path, "anchor", "--store", certPath)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		logger.Info("执行命令: sudo %s anchor --store %s", path, certPath)
-		if err := cmd.Run(); err != nil {
-			return false, err
-		}
-		return true, nil
-	} else if path, err := exec.LookPath("update-ca-certificates"); err == nil {
+	if _, err := os.Stat("/etc/pki/ca-trust/source/anchors/"); err == nil {
+		destPath = "/etc/pki/ca-trust/source/anchors/snirect-root.pem"
+		updateCmd = "update-ca-trust"
+		updateArgs = []string{"extract"}
+	} else if _, err := os.Stat("/usr/local/share/ca-certificates/"); err == nil {
 		destPath = "/usr/local/share/ca-certificates/snirect-root.crt"
-		updateCmd = path
-	} else if path, err := exec.LookPath("update-ca-trust"); err == nil {
-		destPath = "/etc/pki/ca-trust/source/anchors/snirect-root.crt"
-		updateCmd = path
+		updateCmd = "update-ca-certificates"
+	} else if _, err := os.Stat("/etc/ca-certificates/trust-source/anchors/"); err == nil {
+		destPath = "/etc/ca-certificates/trust-source/anchors/snirect-root.crt"
+		updateCmd = "update-ca-certificates" // Arch uses update-ca-trust but update-ca-certificates might be present
+		if _, err := exec.LookPath("update-ca-trust"); err == nil {
+			updateCmd = "update-ca-trust"
+			updateArgs = []string{"extract"}
+		}
+	} else if _, err := os.Stat("/usr/share/pki/trust/anchors/"); err == nil {
+		destPath = "/usr/share/pki/trust/anchors/snirect-root.pem"
+		updateCmd = "update-ca-certificates"
 	} else {
-		return false, fmt.Errorf("could not detect certificate management tool (trust, update-ca-certificates, or update-ca-trust)")
+		return false, fmt.Errorf("不支持的 Linux 发行版：无法检测到标准的 CA 安装路径，且未找到 trust 工具。\n请将证书手动添加到系统信任库中。")
 	}
 
-	logger.Info("正在将证书复制到 %s...", destPath)
-	cpCmd := exec.Command("sudo", "cp", certPath, destPath)
-	cpCmd.Stdout = os.Stdout
-	cpCmd.Stderr = os.Stderr
-	if err := cpCmd.Run(); err != nil {
-		return false, fmt.Errorf("failed to copy certificate: %v", err)
+	// 读取证书数据
+	data, err := os.ReadFile(certPath)
+	if err != nil {
+		return false, err
 	}
 
-	logger.Info("正在使用 %s 更新信任库...", updateCmd)
-	cmdArgs := append([]string{updateCmd}, updateArgs...)
-	upCmd := exec.Command("sudo", cmdArgs...)
+	// 写入证书文件
+	logger.Info("正在写入证书到 %s...", destPath)
+	teeCmd := exec.Command("sudo", "tee", destPath)
+	teeCmd.Stdin = strings.NewReader(string(data))
+	teeCmd.Stdout = nil
+	teeCmd.Stderr = os.Stderr
+	if err := teeCmd.Run(); err != nil {
+		return false, fmt.Errorf("写入证书文件失败: %v\n请手动将证书复制到 %s", err, destPath)
+	}
+
+	// 运行更新命令
+	logger.Info("正在更新信任库 (%s)...", updateCmd)
+	upCmd := exec.Command("sudo", append([]string{updateCmd}, updateArgs...)...)
 	upCmd.Stdout = os.Stdout
 	upCmd.Stderr = os.Stderr
 	if err := upCmd.Run(); err != nil {
-		return false, fmt.Errorf("failed to update trust store: %v", err)
+		return false, fmt.Errorf("更新信任库失败: %v\n请尝试手动运行: sudo %s %s", err, updateCmd, strings.Join(updateArgs, " "))
 	}
 
-	logger.Info("证书安装成功！")
+	// 验证安装
+	if !isCertInstalled(certPath) {
+		return false, fmt.Errorf("安装似乎完成了，但在系统信任库中仍未检测到证书。\n请重启应用或尝试手动安装。")
+	}
+
 	return true, nil
 }
 
-func isCertInstalled(certData []byte) bool {
-	certPaths := []string{
-		"/usr/local/share/ca-certificates/snirect-root.crt",
-		"/etc/pki/ca-trust/source/anchors/snirect-root.crt",
+func isCertInstalled(certPath string) bool {
+	// Bypass Go's x509.SystemCertPool caching by running a separate process
+	// The separate process will load a fresh SystemCertPool
+	cmd := exec.Command(os.Args[0], "verify-cert", certPath)
+	if err := cmd.Run(); err == nil {
+		return true
 	}
-
-	for _, path := range certPaths {
-		if data, err := os.ReadFile(path); err == nil {
-			if string(data) == string(certData) {
-				return true
-			}
-		}
-	}
-
-	if path, err := exec.LookPath("trust"); err == nil {
-		cmd := exec.Command(path, "list")
-		output, err := cmd.Output()
-		if err == nil && strings.Contains(string(output), "Snirect Root CA") {
-			return true
-		}
-	}
-
 	return false
 }
 
@@ -129,6 +146,9 @@ func uninstallCertPlatform(certPath string) error {
 	certPaths := []string{
 		"/usr/local/share/ca-certificates/snirect-root.crt",
 		"/etc/pki/ca-trust/source/anchors/snirect-root.crt",
+		"/etc/pki/ca-trust/source/anchors/snirect-root.pem",
+		"/etc/ca-certificates/trust-source/anchors/snirect-root.crt",
+		"/usr/share/pki/trust/anchors/snirect-root.pem",
 	}
 
 	removed := false
@@ -187,12 +207,7 @@ func uninstallCertPlatform(certPath string) error {
 }
 
 func checkCertStatusPlatform(certPath string) (bool, error) {
-	certData, err := os.ReadFile(certPath)
-	if err != nil {
-		return false, fmt.Errorf("failed to read certificate: %v", err)
-	}
-
-	installed := isCertInstalled(certData)
+	installed := isCertInstalled(certPath)
 	return installed, nil
 }
 
