@@ -53,7 +53,7 @@ type Config struct {
 	CheckHostname interface{} `toml:"check_hostname"`
 
 	// SetProxy indicates whether to automatically set the system proxy.
-	SetProxy bool `toml:"setproxy"`
+	SetProxy bool `toml:"set_proxy"`
 
 	// ImportCA controls the root CA installation policy ("auto", "always", "never").
 	ImportCA string `toml:"importca"`
@@ -94,7 +94,7 @@ type LimitConfig struct {
 
 // DNSConfig contains DNS resolver settings.
 type DNSConfig struct {
-	Nameserver   []string `toml:"nameserver"`   // Upstream DNS servers (DoH/DoT/DoQ)
+	Nameserver   []string `toml:"nameserver"`    // Upstream DNS servers (DoH/DoT/DoQ)
 	BootstrapDNS []string `toml:"bootstrap_dns"` // DNS servers for bootstrapping encryption
 }
 
