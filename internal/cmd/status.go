@@ -182,7 +182,7 @@ func checkServiceStatus() string {
 		}
 		cmd := exec.Command("launchctl", "list")
 		output, err := cmd.Output()
-		if err == nil && strings.Contains(string(output), "snirect") {
+		if err == nil && strings.Contains(string(output), "com.snirect.proxy") {
 			return green + "✓ Running" + reset
 		}
 		return red + "✗ Not installed" + reset
