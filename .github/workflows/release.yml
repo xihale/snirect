@@ -29,16 +29,11 @@ jobs:
       - name: Install UPX
         run: sudo apt-get update && sudo apt-get install -y upx-ucl
 
-      - name: Install Mage
-        uses: magefile/mage-action@v3
-        with:
-          version: latest
-
       - name: Build and Package
         run: |
-          mage crossAll
-          mage upx
-          mage checksum
+          go run github.com/magefile/mage crossAll
+          go run github.com/magefile/mage upx
+          go run github.com/magefile/mage checksum
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
