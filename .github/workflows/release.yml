@@ -31,7 +31,7 @@ jobs:
 
       - name: Build and Package
         run: |
-          make cross-all TAGS="quic"
+          make cross-all
           make upx
           make checksum
 
