@@ -15,10 +15,15 @@ var versionCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("Snirect version: %s\n", Version)
 		fmt.Println("Module Status:")
+
+		green := "\033[32m"
+		red := "\033[31m"
+		reset := "\033[0m"
+
 		for _, m := range getModuleStatus() {
-			status := "[-]"
+			status := red + "[-]" + reset
 			if m.Enabled {
-				status = "[+]"
+				status = green + "[+]" + reset
 			}
 			fmt.Printf("  %s %s\n", status, m.Name)
 		}

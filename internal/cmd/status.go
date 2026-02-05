@@ -119,7 +119,35 @@ func printStatus() {
 	fmt.Printf("  启动代理:      %ssnirect%s\n", yellow, reset)
 	fmt.Printf("  安装 CA:       %ssnirect install-cert%s\n", yellow, reset)
 	fmt.Printf("  设置代理:      %ssnirect set-proxy%s\n", yellow, reset)
-	fmt.Printf("  查看日志:      %sjournalctl --user -u snirect -f%s (Linux)\n", yellow, reset)
+
+	// Log location logic
+	logHint := ""
+	if cfg != nil && cfg.Log.File != "" {
+		// 1. Priority: User configured log file
+		absLogPath, _ := filepath.Abs(cfg.Log.File)
+		logHint = fmt.Sprintf("tail -f %s", absLogPath)
+		if runtime.GOOS == "windows" {
+			logHint = fmt.Sprintf("Get-Content -Wait \"%s\"", absLogPath)
+		}
+	} else {
+		// 2. Default behavior (Stdout/Stderr)
+		// Depends on how it's running
+		if strings.Contains(serviceStatus, "正在运行") {
+			switch runtime.GOOS {
+			case "linux":
+				logHint = "journalctl --user -u snirect -f"
+			case "darwin":
+				homeDir, _ := os.UserHomeDir()
+				logHint = fmt.Sprintf("tail -f %s/Library/Logs/snirect.log", homeDir)
+			case "windows":
+				logHint = "查看 Windows 事件查看器 或 确保配置了 logfile"
+			}
+		} else {
+			logHint = "直接运行可以看到日志 (默认输出到控制台)"
+		}
+	}
+
+	fmt.Printf("  查看日志:      %s%s%s\n", yellow, logHint, reset)
 	fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 }
 
