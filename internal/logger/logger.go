@@ -1,84 +1,78 @@
 package logger
 
 import (
+	"context"
+	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"strings"
-
-	"github.com/natefinch/lumberjack"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+	"sync"
 )
 
 var (
-	sugar        *zap.SugaredLogger
-	atom         zap.AtomicLevel
-	disableColor bool
+	currentLogger *slog.Logger
+	logLevel      *slog.LevelVar
+	mu            sync.RWMutex
+	disableColor  bool
 )
 
-func SetColorEnabled(enabled bool) {
-	disableColor = !enabled
-}
-
 func init() {
-	atom = zap.NewAtomicLevelAt(zap.InfoLevel)
+	logLevel = &slog.LevelVar{}
+	logLevel.Set(slog.LevelInfo)
 	updateLogger("")
 }
 
-func updateLogger(path string) {
-	var cores []zapcore.Core
+func SetColorEnabled(enabled bool) {
+	disableColor = !enabled
+	// Re-initialize with new color setting if needed
+	// For simplicity, updateLogger will be called by the app
+}
 
-	cores = append(cores, zapcore.NewCore(
-		getConsoleEncoder(!disableColor),
-		zapcore.Lock(os.Stderr),
-		atom,
-	))
+func updateLogger(path string) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	var writers []io.Writer
+	writers = append(writers, os.Stderr)
 
 	if path != "" {
-		w := zapcore.AddSync(&lumberjack.Logger{
-			Filename:   path,
-			MaxSize:    10,
-			MaxBackups: 3,
-			MaxAge:     28,
-			Compress:   true,
-		})
-
-		cores = append(cores, zapcore.NewCore(
-			getConsoleEncoder(false),
-			w,
-			atom,
-		))
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err == nil {
+			writers = append(writers, f)
+		} else {
+			fmt.Fprintf(os.Stderr, "Failed to open log file: %v\n", err)
+		}
 	}
 
-	core := zapcore.NewTee(cores...)
-	logger := zap.New(core)
-	sugar = logger.Sugar()
-}
+	multiWriter := io.MultiWriter(writers...)
 
-func getConsoleEncoder(color bool) zapcore.Encoder {
-	config := zap.NewProductionEncoderConfig()
-	config.EncodeTime = zapcore.TimeEncoderOfLayout("2006/01/02 15:04:05")
-	if color {
-		config.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	} else {
-		config.EncodeLevel = zapcore.CapitalLevelEncoder
+	opts := &slog.HandlerOptions{
+		Level: logLevel,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey {
+				return slog.String(a.Key, a.Value.Time().Format("2006/01/02 15:04:05"))
+			}
+			return a
+		},
 	}
-	config.CallerKey = "" // Disable caller
-	return zapcore.NewConsoleEncoder(config)
+
+	handler := slog.NewTextHandler(multiWriter, opts)
+	currentLogger = slog.New(handler)
 }
 
-// SetLevel sets the global log level
 func SetLevel(l string) {
 	switch strings.ToUpper(l) {
 	case "DEBUG":
-		atom.SetLevel(zap.DebugLevel)
+		logLevel.Set(slog.LevelDebug)
 	case "INFO":
-		atom.SetLevel(zap.InfoLevel)
+		logLevel.Set(slog.LevelInfo)
 	case "WARN", "WARNING":
-		atom.SetLevel(zap.WarnLevel)
+		logLevel.Set(slog.LevelWarn)
 	case "ERROR":
-		atom.SetLevel(zap.ErrorLevel)
+		logLevel.Set(slog.LevelError)
 	default:
-		atom.SetLevel(zap.DebugLevel)
+		logLevel.Set(slog.LevelDebug)
 	}
 }
 
@@ -87,22 +81,19 @@ func SetOutput(path string) error {
 	return nil
 }
 
-func Debug(format string, v ...interface{}) {
-	sugar.Debugf(format, v...)
+func logf(level slog.Level, format string, v ...interface{}) {
+	if !currentLogger.Enabled(context.Background(), level) {
+		return
+	}
+	msg := fmt.Sprintf(format, v...)
+	currentLogger.Log(context.Background(), level, msg)
 }
 
-func Info(format string, v ...interface{}) {
-	sugar.Infof(format, v...)
-}
-
-func Warn(format string, v ...interface{}) {
-	sugar.Warnf(format, v...)
-}
-
-func Error(format string, v ...interface{}) {
-	sugar.Errorf(format, v...)
-}
-
+func Debug(format string, v ...interface{}) { logf(slog.LevelDebug, format, v...) }
+func Info(format string, v ...interface{})  { logf(slog.LevelInfo, format, v...) }
+func Warn(format string, v ...interface{})  { logf(slog.LevelWarn, format, v...) }
+func Error(format string, v ...interface{}) { logf(slog.LevelError, format, v...) }
 func Fatal(format string, v ...interface{}) {
-	sugar.Fatalf(format, v...)
+	logf(slog.LevelError, format, v...)
+	os.Exit(1)
 }

@@ -39,19 +39,18 @@ After installation, restart your shell or run the temporary usage command.`,
 		if installCompletion {
 			return installShellCompletion(shell, cmd)
 		} else {
-			switch shell {
-			case "bash":
-				cmd.Root().GenBashCompletion(os.Stdout)
-			case "zsh":
-				cmd.Root().GenZshCompletion(os.Stdout)
-			case "fish":
-				cmd.Root().GenFishCompletion(os.Stdout, true)
-			case "powershell":
-				cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
-			}
+			return dumpCompletion(shell)
 		}
-		return nil
 	},
+}
+
+func dumpCompletion(shell string) error {
+	data, err := completionsFS.ReadFile("completions/" + shell)
+	if err != nil {
+		return fmt.Errorf("failed to read embedded completion for %s: %w", shell, err)
+	}
+	_, err = os.Stdout.Write(data)
+	return err
 }
 
 func init() {
@@ -66,70 +65,32 @@ func installShellCompletion(shell string, cmd *cobra.Command) error {
 	}
 
 	var path string
-	var errGen error
 
 	switch shell {
 	case "bash":
 		path = getBashCompletionPath(homeDir)
-		err = os.MkdirAll(filepath.Dir(path), 0755)
-		if err == nil {
-			f, errCreate := os.Create(path)
-			if errCreate == nil {
-				defer f.Close()
-				errGen = cmd.Root().GenBashCompletion(f)
-			} else {
-				err = errCreate
-			}
-		}
+		err = writeCompletionFile(path, shell)
 	case "zsh":
 		path = getZshCompletionPath(homeDir)
-		err = os.MkdirAll(filepath.Dir(path), 0755)
-		if err == nil {
-			f, errCreate := os.Create(path)
-			if errCreate == nil {
-				defer f.Close()
-				errGen = cmd.Root().GenZshCompletion(f)
-				if runtime.GOOS != "windows" {
-					fmt.Println("Note: Ensure ~/.zfunc is in your fpath in .zshrc:")
-					fmt.Println("      fpath+=~/.zfunc; autoload -U compinit; compinit")
-				}
-			} else {
-				err = errCreate
-			}
+		err = writeCompletionFile(path, shell)
+		if err == nil && runtime.GOOS != "windows" {
+			fmt.Println("Note: Ensure ~/.zfunc is in your fpath in .zshrc:")
+			fmt.Println("      fpath+=~/.zfunc; autoload -U compinit; compinit")
 		}
 	case "fish":
 		path = getFishCompletionPath(homeDir)
-		err = os.MkdirAll(filepath.Dir(path), 0755)
-		if err == nil {
-			f, errCreate := os.Create(path)
-			if errCreate == nil {
-				defer f.Close()
-				errGen = cmd.Root().GenFishCompletion(f, true)
-			} else {
-				err = errCreate
-			}
-		}
+		err = writeCompletionFile(path, shell)
 	case "powershell":
 		path = getPowerShellCompletionPath(homeDir)
-		err = os.MkdirAll(filepath.Dir(path), 0755)
+		err = writeCompletionFile(path, shell)
 		if err == nil {
-			f, errCreate := os.Create(path)
-			if errCreate == nil {
-				defer f.Close()
-				errGen = cmd.Root().GenPowerShellCompletionWithDesc(f)
-				fmt.Printf("To enable PowerShell completions, add this line to your $PROFILE:\n")
-				fmt.Printf(". %s\n", path)
-			} else {
-				err = errCreate
-			}
+			fmt.Printf("To enable PowerShell completions, add this line to your $PROFILE:\n")
+			fmt.Printf(". %s\n", path)
 		}
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to create completion file at %s: %w", path, err)
-	}
-	if errGen != nil {
-		return fmt.Errorf("failed to generate completion content: %w", errGen)
+		return fmt.Errorf("failed to install completion: %w", err)
 	}
 
 	fmt.Printf("Completion script installed to: %s\n", path)
@@ -137,6 +98,17 @@ func installShellCompletion(shell string, cmd *cobra.Command) error {
 		fmt.Println("Please restart your shell for changes to take effect.")
 	}
 	return nil
+}
+
+func writeCompletionFile(path, shell string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	data, err := completionsFS.ReadFile("completions/" + shell)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
 }
 
 func getBashCompletionPath(homeDir string) string {

@@ -103,7 +103,18 @@ func printStatus() {
 	fmt.Printf("  状态: %s\n", serviceStatus)
 	fmt.Println()
 
-	// 5. Quick tips
+	// 5. Check modules
+	fmt.Printf("%s组件模块:%s\n", bold, reset)
+	for _, m := range getModuleStatus() {
+		status := red + "[-] " + reset
+		if m.Enabled {
+			status = green + "[+] " + reset
+		}
+		fmt.Printf("  %s%s\n", status, m.Name)
+	}
+	fmt.Println()
+
+	// 6. Quick tips
 	fmt.Printf("%s%s快速命令:%s\n", bold, cyan, reset)
 	fmt.Printf("  启动代理:      %ssnirect%s\n", yellow, reset)
 	fmt.Printf("  安装 CA:       %ssnirect install-cert%s\n", yellow, reset)

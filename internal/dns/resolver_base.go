@@ -13,9 +13,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/miekg/dns"
 )
+
+type dnsBackend interface {
+	Exchange(m *dns.Msg) (*dns.Msg, string, error)
+}
 
 type cacheEntry struct {
 	ip        string
@@ -23,9 +26,9 @@ type cacheEntry struct {
 }
 
 type Resolver struct {
-	Config    *config.Config
-	Rules     *config.Rules
-	upstreams []upstream.Upstream
+	Config  *config.Config
+	Rules   *config.Rules
+	backend dnsBackend
 
 	cache   map[string]cacheEntry
 	cacheMu sync.RWMutex
@@ -64,40 +67,7 @@ func NewResolver(cfg *config.Config, rules *config.Rules) *Resolver {
 		cache:  make(map[string]cacheEntry),
 	}
 
-	// Completely silence library logs
-	libLogger := slog.New(&discardHandler{})
-
-	opts := &upstream.Options{
-		Timeout: 5 * time.Second,
-		Logger:  libLogger,
-	}
-
-	if len(cfg.DNS.BootstrapDNS) > 0 {
-		var bootstrapResolvers []upstream.Resolver
-		for _, bootAddr := range cfg.DNS.BootstrapDNS {
-			bootRes, err := upstream.NewUpstreamResolver(bootAddr, &upstream.Options{
-				Timeout: 3 * time.Second,
-				Logger:  libLogger,
-			})
-			if err != nil {
-				continue
-			}
-			bootstrapResolvers = append(bootstrapResolvers, bootRes)
-		}
-
-		if len(bootstrapResolvers) > 0 {
-			opts.Bootstrap = upstream.ParallelResolver(bootstrapResolvers)
-		}
-	}
-
-	for _, ns := range cfg.DNS.Nameserver {
-		u, err := upstream.AddressToUpstream(ns, opts)
-		if err != nil {
-			logger.Warn("DNS: failed to create upstream %s: %v", ns, err)
-			continue
-		}
-		r.upstreams = append(r.upstreams, u)
-	}
+	r.backend = newBackend(cfg, rules)
 
 	go r.cleanCacheRoutine()
 
@@ -181,7 +151,7 @@ func (r *Resolver) Resolve(ctx context.Context, host string, clientIP net.IP) (s
 		return target, nil
 	}
 
-	if len(r.upstreams) == 0 {
+	if r.backend == nil {
 		return r.resolveSystem(ctx, host, target)
 	}
 
@@ -252,17 +222,17 @@ func (r *Resolver) resolveStrictIPv6(ctx context.Context, target string, clientI
 func (r *Resolver) lookupType(ctx context.Context, target string, qType uint16, clientIP net.IP) (string, uint32, error) {
 	m := r.buildMessage(target, qType, clientIP)
 
-	reply, resolvedUpstream, err := upstream.ExchangeParallel(r.upstreams, m)
+	reply, addr, err := r.backend.Exchange(m)
 	if err != nil {
 		return "", 0, err
 	}
 	if reply.Rcode != dns.RcodeSuccess {
-		return "", 0, fmt.Errorf("dns rcode %s from %s", dns.RcodeToString[reply.Rcode], resolvedUpstream.Address())
+		return "", 0, fmt.Errorf("dns rcode %s from %s", dns.RcodeToString[reply.Rcode], addr)
 	}
 
 	ip, ttl, err := r.parseReply(reply, qType)
 	if err == nil {
-		logger.Debug("DNS: %s -> %s (%s, TTL: %d) via %s", target, ip, dns.TypeToString[qType], ttl, resolvedUpstream.Address())
+		logger.Debug("DNS: %s -> %s (%s, TTL: %d) via %s", target, ip, dns.TypeToString[qType], ttl, addr)
 	}
 	return ip, ttl, err
 }

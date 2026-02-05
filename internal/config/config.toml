@@ -66,8 +66,14 @@ set_proxy = true
 # [DNS Settings]
 # Custom DNS resolution settings.
 #
+# NOTE: To use QUIC-based DNS (quic:// or h3://), you must compile Snirect with the 'quic' tag.
+# Standard builds only support UDP, TCP, TLS, and DoH (standard HTTPS).
+#
 # DNS 设置
 # 自定义域名解析配置。
+#
+# 注意：若要使用基于 QUIC 的 DNS (quic:// 或 h3://)，必须在编译时添加 'quic' 标签。
+# 标准版编译仅支持 UDP、TCP、TLS 和标准 DoH (HTTPS)。
 [DNS]
 # List of upstream DNS servers. Supports DoH, DoT, and DoQ.
 # 上游 DNS 服务器列表。支持 DoH、DoT 和 DoQ 格式。
