@@ -1,24 +1,23 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
-    inputs:
-      tag_name:
-        description: 'Tag name to upload assets to (e.g. v1.0.0)'
-        required: true
 
 permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build and Upload Assets
+  build-and-release:
+    name: Build and Release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -32,15 +31,17 @@ jobs:
 
       - name: Build and Package
         run: |
-          make cross-all
+          make cross-all TAGS="quic"
           make upx
           make checksum
 
-      - name: Upload Assets to Release
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.release.tag_name || inputs.tag_name }}
           files: |
             dist/*
+          draft: false
+          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') || contains(github.ref, 'rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
