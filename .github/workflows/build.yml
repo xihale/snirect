@@ -27,7 +27,12 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
+      - name: Install Mage
+        uses: magefile/mage-action@v3
+        with:
+          version: latest
+
       - name: Build All Platforms
         run: |
-          make cross-all
-          make checksum
+          mage crossAll
+          mage checksum

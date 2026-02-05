@@ -17,12 +17,20 @@
 
 ## 编译与开发
 
-本项目支持通过 Go Build Tags 来控制功能模块：
+本项目全面使用 [Mage](https://magefile.org/) 作为构建系统。由于采用了零依赖模式，你无需预装 `mage`，直接使用 Go 运行即可：
 
 | 版本 | 编译命令 | 说明 |
 | :--- | :--- | :--- |
-| **标准版 (默认)** | `go build ./cmd/snirect` | 极致轻量 (~8MB)。包含核心代理、系统服务管理、CA 证书（含 Firefox）自动安装。 |
-| **完整版** | `go build -tags quic ./cmd/snirect` | 包含所有功能，增加 **QUIC (DoQ/H3)** 支持。体积约 11MB。 |
+| **标准版 (默认)** | `go run github.com/magefile/mage build` | 极致轻量 (~8MB)。包含核心代理、系统服务管理、CA 证书自动安装。 |
+| **完整版** | `go run github.com/magefile/mage full` | 包含所有功能，增加 **QUIC (DoQ/H3)** 支持。体积约 11MB。 |
+
+### 常用构建命令
+- **清理产物**: `go run github.com/magefile/mage clean`
+- **交叉编译**: `go run github.com/magefile/mage crossAll`
+- **同步规则**: `go run github.com/magefile/mage updateRules`
+- **查看所有目标**: `go run github.com/magefile/mage -l`
+
+> **提示**：所有编译出的二进制文件将存放在 `dist/` 目录下。
 
 > **提示**：可以使用 `snirect version` 或 `snirect status` 查看当前二进制文件开启的功能模块。
 
