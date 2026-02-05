@@ -52,7 +52,6 @@ type Config struct {
 	// Can be bool, string ("strict", "true", "false"), or []string of allowed hostnames.
 	CheckHostname interface{} `toml:"check_hostname"`
 
-	// SetProxy indicates whether to automatically set the system proxy.
 	SetProxy bool `toml:"set_proxy"`
 
 	// ImportCA controls the root CA installation policy ("auto", "always", "never").

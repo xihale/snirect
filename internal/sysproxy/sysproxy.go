@@ -100,3 +100,7 @@ func HideConsole() {
 func DisableColor() {
 	disableColorPlatform()
 }
+
+func IsSilentLaunch() bool {
+	return isSilentLaunchPlatform()
+}

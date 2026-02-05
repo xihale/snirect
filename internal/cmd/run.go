@@ -17,7 +17,6 @@ import (
 )
 
 func runProxy(cmd *cobra.Command) error {
-	// 1. Ensure config and get app data dir
 	appDir, err := config.EnsureConfig(false)
 	if err != nil {
 		return fmt.Errorf("failed to initialize configuration: %w", err)
@@ -27,12 +26,10 @@ func runProxy(cmd *cobra.Command) error {
 	rulesPath := filepath.Join(appDir, "rules.toml")
 	certDir := filepath.Join(appDir, "certs")
 
-	// Ensure restricted permissions
 	if err := os.MkdirAll(certDir, 0700); err != nil {
 		return fmt.Errorf("failed to create secure cert dir: %w", err)
 	}
 
-	// 2. Load Config
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		logger.Warn("Warning: Failed to load config.toml: %v. Using defaults.", err)
@@ -45,18 +42,17 @@ func runProxy(cmd *cobra.Command) error {
 	if isAutoLaunch {
 		sysproxy.DisableColor()
 		logger.SetColorEnabled(false)
-		sysproxy.HideConsole()
+		if sysproxy.IsSilentLaunch() {
+			sysproxy.HideConsole()
+		}
 	}
 
 	shouldSetProxy := cfg.SetProxy
 	if cmd.Flags().Changed("set-proxy") {
 		val, _ := cmd.Flags().GetBool("set-proxy")
 		shouldSetProxy = val
-	} else if isAutoLaunch {
-		shouldSetProxy = true
 	}
 
-	// Init Logger
 	logger.SetLevel(cfg.Log.Level)
 	if cfg.Log.File != "" {
 		logPath := cfg.Log.File
@@ -70,7 +66,6 @@ func runProxy(cmd *cobra.Command) error {
 		}
 	}
 
-	// 3. Init CA
 	caCertPath := filepath.Join(certDir, "root.crt")
 	caKeyPath := filepath.Join(certDir, "root.key")
 
@@ -83,7 +78,6 @@ func runProxy(cmd *cobra.Command) error {
 	logger.Info("正在启动 Snirect...")
 	logger.Info("配置文件加载自: %s", appDir)
 
-	// Handle CA certificate installation based on importca setting
 	switch cfg.ImportCA {
 	case "never":
 		logger.Info("CA 自动安装已禁用 (importca = never)")
@@ -123,10 +117,8 @@ func runProxy(cmd *cobra.Command) error {
 		rules = &config.Rules{}
 	}
 
-	// 4. Init Proxy
 	srv := proxy.NewProxyServer(cfg, rules, certMgr)
 
-	// 5. Start
 	serverErr := make(chan error, 1)
 	go func() {
 		if err := srv.Start(); err != nil {
@@ -134,7 +126,6 @@ func runProxy(cmd *cobra.Command) error {
 		}
 	}()
 
-	// 6. Set System Proxy
 	if shouldSetProxy {
 		time.Sleep(100 * time.Millisecond)
 		pacURL := fmt.Sprintf("http://127.0.0.1:%d/pac/?t=%d", cfg.Server.Port, time.Now().Unix())

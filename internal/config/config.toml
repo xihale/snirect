@@ -21,11 +21,10 @@
 
 # [System Proxy]
 # Automatically set Snirect as the system proxy on startup.
-# Equivalent to starting with the --set-proxy flag.
 #
 # 自动设置系统代理
-# 启动时自动将 Snirect 设置为系统代理。等同于使用 --set-proxy 命令行参数。
-# set_proxy = false
+# 启动时自动将 Snirect 设置为系统代理。
+set_proxy = true
 
 # [Root CA Installation]
 # Policy for automatically importing and trusting the Snirect Root CA.

@@ -39,7 +39,7 @@ chmod +x snirect-linux-amd64
 
 ## 系统安装 (可选)
 
-如果你希望 Snirect 能够随系统启动或作为后台服务运行，可以使用 `install` 命令。
+如果你希望 Snirect 能够随系统启动或作为后台服务运行，可以使用以下方式：
 
 ### Linux / macOS
 
@@ -48,29 +48,33 @@ chmod +x snirect-linux-amd64
 ./snirect install
 ```
 
-### Windows (管理员身份)
+### Windows (方式一：注册为计划任务)
 
 ```powershell
-# 安装并注册为后台计划任务
+# 以管理员身份运行：安装并注册为后台计划任务
 .\snirect.exe install
 ```
 
-**安装后，你可以通过以下命令管理服务：**
+### Windows (方式二：移动到启动目录)
 
-- **Linux (systemd)**: `systemctl --user start/stop/status snirect`
-- **macOS (launchd)**: `launchctl start/stop com.snirect.proxy`
-- **Windows**: 在“任务计划程序”中管理 `Snirect` 任务
+1. 按下 `Win + R` 键，输入 `shell:startup` 并回车，打开“启动”文件夹。
+2. 将 `snirect.exe` 文件的快捷方式（或程序本身）移动到该文件夹中。
+
+**说明**：
+- **静默运行**：手动双击打开时会显示窗口；若在**系统启动 3 分钟内**运行（即开机自启场景）或通过计划任务启动，程序将自动隐藏窗口进入后台运行。
+- **系统代理**：程序启动后会自动配置系统代理（由 `config.toml` 中的 `set_proxy` 控制，默认为 `true`）。
 
 ---
 
 ## 常用命令
+
 
 | 命令                   | 简写 | 说明                               |
 | :--------------------- | :--- | :--------------------------------- |
 | `snirect -s`           | -    | **启动代理并自动启用系统代理**     |
 | `snirect status`       | -    | 查看当前代理、证书和服务的运行状态 |
 | `snirect install`      | `i`  | 安装二进制文件并注册后台服务/任务  |
-| `snirect uninstall`    | `rm` | 完整卸载（包含二进制、服务和配置） |
+| `snirect uninstall`    | `rm` | 完整卸载（包含二进制、服务 and 配置） |
 | `snirect install-cert` | `ic` | 仅安装根 CA 证书到系统信任库       |
 | `snirect firefox-cert` | -    | 将 CA 证书安装到 Firefox 系浏览器  |
 
@@ -95,7 +99,7 @@ Snirect 主要通过 PAC (Proxy Auto-Config) 进行系统级代理设置：
 
 由于 HTTPS 代理需要解密 SNI，浏览器必须信任 Snirect 的根证书：
 
-- **Chrome/Edge/Brave/Safari**: 使用系统信任库，运行 `snirect install-cert` 即可。
+- **Chrome/Edge/Brave/Safari**: 使用系统信任库，运行 `snirect install-cert` 即可.
 - **Firefox 系列**: Firefox 使用独立的证书库，请运行 `snirect firefox-cert` 进行自动安装。
 
 ### 配置与规则

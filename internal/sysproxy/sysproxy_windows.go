@@ -4,7 +4,6 @@ package sysproxy
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"unsafe"
@@ -167,12 +166,7 @@ func isLaunchedBySystemOrGUIPlatform() bool {
 		uintptr(2),
 	)
 
-	if ret > 1 {
-		return false
-	}
-
-	sessionID := os.Getenv("SESSIONNAME")
-	return sessionID != "" && !strings.Contains(strings.ToUpper(sessionID), "CONSOLE")
+	return ret <= 1
 }
 
 func hideConsolePlatform() {
@@ -182,6 +176,63 @@ func hideConsolePlatform() {
 	}
 
 	procShowWindow.Call(hwnd, windows.SW_HIDE)
+}
+
+func isSilentLaunchPlatform() bool {
+	kernel32 := windows.NewLazySystemDLL("kernel32.dll")
+	getTickCount64 := kernel32.NewProc("GetTickCount64")
+	uptime, _, _ := getTickCount64.Call()
+
+	if uptime < 180000 {
+		logger.Debug("Detected silent launch: System uptime is less than 3 minutes (%d ms)", uptime)
+		return true
+	}
+
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return false
+	}
+	defer windows.CloseHandle(snapshot)
+
+	var procEntry windows.ProcessEntry32
+	procEntry.Size = uint32(unsafe.Sizeof(procEntry))
+
+	myPID := uint32(windows.GetCurrentProcessId())
+	var parentPID uint32
+	found := false
+
+	err = windows.Process32First(snapshot, &procEntry)
+	for err == nil {
+		if procEntry.ProcessID == myPID {
+			parentPID = procEntry.ParentProcessID
+			found = true
+			break
+		}
+		err = windows.Process32Next(snapshot, &procEntry)
+	}
+
+	if !found {
+		return false
+	}
+
+	err = windows.Process32First(snapshot, &procEntry)
+	for err == nil {
+		if procEntry.ProcessID == parentPID {
+			parentName := windows.UTF16ToString(procEntry.ExeFile[:])
+			parentName = strings.ToLower(parentName)
+			if strings.Contains(parentName, "svchost.exe") ||
+				strings.Contains(parentName, "taskhostw.exe") ||
+				strings.Contains(parentName, "services.exe") {
+				logger.Debug("Detected silent launch: Parent process is %s", parentName)
+				return true
+			}
+			logger.Debug("Not a silent launch: Parent process is %s, uptime is %d ms", parentName, uptime)
+			break
+		}
+		err = windows.Process32Next(snapshot, &procEntry)
+	}
+
+	return false
 }
 
 func disableColorPlatform() {

@@ -176,4 +176,8 @@ func isLaunchedBySystemOrGUIPlatform() bool {
 
 func hideConsolePlatform() {}
 
+func isSilentLaunchPlatform() bool {
+	return false
+}
+
 func disableColorPlatform() {}
