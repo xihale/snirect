@@ -65,49 +65,27 @@ func TestParseCertPolicy(t *testing.T) {
 }
 
 func TestLoadConfig_Overwrite(t *testing.T) {
-
-	// Create a temporary config file with only one field overridden
-
 	tmpDir := t.TempDir()
-
 	cfgPath := filepath.Join(tmpDir, "config.toml")
-
 	userTOML := `
-
 [server]
-
 port = 9999
-
 `
-
 	if err := os.WriteFile(cfgPath, []byte(userTOML), 0644); err != nil {
-
 		t.Fatal(err)
-
 	}
 
 	cfg, err := LoadConfig(cfgPath)
-
 	if err != nil {
-
 		t.Fatalf("LoadConfig failed: %v", err)
-
 	}
-
-	// Verify the overridden field
 
 	if cfg.Server.Port != 9999 {
-
 		t.Errorf("expected port 9999, got %d", cfg.Server.Port)
-
 	}
 
-	// Verify a field that should still have the default value
-
 	if cfg.Server.Address != "127.0.0.1" {
-
 		t.Errorf("expected default address 127.0.0.1, got %s", cfg.Server.Address)
-
 	}
 
 	if cfg.Timeout.Dial != 30 {
@@ -116,11 +94,6 @@ port = 9999
 }
 
 func TestEnsureConfig(t *testing.T) {
-	// We need to override GetAppDataDir for testing
-	// But since it's hard to override, we'll just check if it generates files correctly
-	// if we could control the path.
-	// For now, let's just check if SampleConfigTOML is used.
-
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.toml")
 
@@ -152,4 +125,39 @@ func compareCertPolicy(a, b CertPolicy) bool {
 		}
 	}
 	return true
+}
+
+func TestRules_DollarPrefixDoesNotAffectPriority(t *testing.T) {
+	rules := &Rules{
+		AlterHostname: map[string]string{
+			"$*google.com":   "g.cn",
+			"*google.com":    "baidu.com",
+			"www.google.com": "specific.com",
+		},
+	}
+	rules.Init()
+
+	val, _ := rules.GetAlterHostname("mail.google.com")
+	if val != "baidu.com" && val != "g.cn" {
+		t.Errorf("expected baidu.com or g.cn, got %s", val)
+	}
+
+	tests := []struct {
+		host string
+		want string
+	}{
+		{"www.google.com", "specific.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.host, func(t *testing.T) {
+			got, ok := rules.GetAlterHostname(tt.host)
+			if !ok {
+				t.Fatalf("expected match for %s", tt.host)
+			}
+			if got != tt.want {
+				t.Errorf("GetAlterHostname(%s) = %s, want %s", tt.host, got, tt.want)
+			}
+		})
+	}
 }

@@ -57,8 +57,8 @@ type Config struct {
 
 	SetProxy bool `toml:"set_proxy"`
 
-	// ImportCA controls the root CA installation policy ("auto", "always", "never").
-	ImportCA string `toml:"importca"`
+	// CAInstall controls the root CA installation policy ("auto", "always", "never").
+	CAInstall string `toml:"ca_install"`
 
 	// IPv6 enables or disables IPv6 support.
 	IPv6 bool `toml:"ipv6"`

@@ -17,7 +17,7 @@ import (
 type Config struct {
 	CheckHostname interface{}   `toml:"check_hostname"`
 	SetProxy      bool          `toml:"set_proxy"`
-	ImportCA      string        `toml:"importca"`
+	CAInstall     string        `toml:"ca_install"`
 	IPv6          bool          `toml:"ipv6"`
 	ECS           string        `toml:"ecs"`
 	DNS           DNSConfig     `toml:"DNS"`

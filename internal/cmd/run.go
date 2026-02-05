@@ -53,7 +53,11 @@ func runProxy(cmd *cobra.Command) error {
 		shouldSetProxy = val
 	}
 
-	logger.SetLevel(cfg.Log.Level)
+	finalLogLevel := cfg.Log.Level
+	if logLevel != "" {
+		finalLogLevel = logLevel
+	}
+	logger.SetLevel(finalLogLevel)
 	if cfg.Log.File != "" {
 		logPath := cfg.Log.File
 		if !filepath.IsAbs(logPath) {
@@ -78,11 +82,11 @@ func runProxy(cmd *cobra.Command) error {
 	logger.Info("正在启动 Snirect...")
 	logger.Info("配置文件加载自: %s", appDir)
 
-	switch cfg.ImportCA {
+	switch cfg.CAInstall {
 	case "never":
-		logger.Info("CA 自动安装已禁用 (importca = never)")
+		logger.Info("CA 自动安装已禁用")
 	case "always":
-		logger.Info("正在强制重新安装 CA 证书 (importca = always)...")
+		logger.Info("正在强制重新安装 CA 证书...")
 		installed, err := sysproxy.ForceInstallCert(caCertPath)
 		if err != nil {
 			logger.Warn("Failed to install root CA: %v", err)
@@ -91,7 +95,7 @@ func runProxy(cmd *cobra.Command) error {
 			logger.Info("Root CA 重新安装成功。请重启浏览器以生效。")
 		}
 	case "auto", "":
-		logger.Info("正在检查根 CA 是否已安装 (importca = auto)...")
+		logger.Info("正在检查根 CA 是否已安装...")
 		installed, err := sysproxy.InstallCert(caCertPath)
 		if err != nil {
 			logger.Warn("安装根 CA 失败: %v", err)
@@ -100,7 +104,7 @@ func runProxy(cmd *cobra.Command) error {
 			logger.Info("Root CA 安装成功。请重启浏览器以生效。")
 		}
 	default:
-		logger.Warn("无效的 importca 值: %q。预期为: auto, always, 或 never。按 auto 处理。", cfg.ImportCA)
+		logger.Warn("无效的 ca_install 值: %q。预期为: auto, always, 或 never。", cfg.CAInstall)
 		logger.Info("正在检查根 CA 是否已安装...")
 		installed, err := sysproxy.InstallCert(caCertPath)
 		if err != nil {
@@ -143,7 +147,7 @@ func runProxy(cmd *cobra.Command) error {
 	case err := <-serverErr:
 		return fmt.Errorf("server failed: %w", err)
 	case <-c:
-		logger.Info("正在关机...")
+		logger.Info("正在关闭...")
 	}
 
 	return nil

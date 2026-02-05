@@ -5,19 +5,19 @@
 # [Certificate Verification Policy]
 # Controls how Snirect verifies the remote server's certificate.
 # Possible values:
-#   false    - (Default) Disable hostname verification. High compatibility but susceptible to MITM attacks.
-#   true     - Loose verification. Matches subdomains more flexibly (e.g., a.test.com matches b.test.com).
+#   false    - Disable hostname verification. High compatibility but susceptible to MITM attacks.
+#   true     - (Default) Loose verification. Matches subdomains more flexibly (e.g., a.test.com matches b.test.com).
 #   "strict" - Standard strict verification. Recommended for high security.
 #   [ "domain1.com", "domain2.com" ] - List of domains to enable verification for.
 #
 # 证书域名校验策略
 # 控制 Snirect 如何验证远程服务器的证书域名。
 # 可选值:
-#   false    - (默认) 不校验证书域名。兼容性最高，但存在中间人攻击风险。
-#   true     - 宽松校验。允许子域名间的通配匹配。
+#   false    - 不校验证书域名。兼容性最高，但存在中间人攻击风险。
+#   true     - (默认) 宽松校验。允许子域名间的通配匹配。
 #   "strict" - 标准严格校验。建议追求安全的用户开启。
 #   [ "domain1.com", "domain2.com" ] - 仅对列表内的域名开启校验。
-# check_hostname = false
+# check_hostname = true
 
 # [System Proxy]
 # Automatically set Snirect as the system proxy on startup.
@@ -39,14 +39,14 @@
 #   "auto"   - (默认) 仅在未检测到已信任的证书时尝试安装。
 #   "always" - 每次启动都强制尝试重新安装。
 #   "never"  - 禁用自动安装，需手动处理证书信任。
-# importca = "auto"
+# ca_install = "auto"
 
 # [IPv6 Support]
 # Enable or disable IPv6 support for proxy connections.
 #
 # IPv6 支持
 # 是否开启对 IPv6 的支持。
-# ipv6 = true
+# ipv6 = false
 
 # [EDNS Client Subnet (ECS)]
 # Provides your network subnet info to DNS servers to get geographically closer IP results.

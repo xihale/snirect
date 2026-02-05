@@ -168,8 +168,20 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 6. Verify Remote Certificate
-	if !s.verifyServerCert(remoteConn, host) {
-		logger.Warn("Certificate verification failed for %s", host)
+	if !s.verifyServerCert(remoteConn, host, targetSNI) {
+		state := remoteConn.ConnectionState()
+		var certInfo string
+		if len(state.PeerCertificates) > 0 {
+			cert := state.PeerCertificates[0]
+			if len(cert.DNSNames) > 0 {
+				certInfo = fmt.Sprintf("Server cert domains: %v", cert.DNSNames)
+			} else {
+				certInfo = fmt.Sprintf("Server cert subject: %s", cert.Subject.CommonName)
+			}
+		} else {
+			certInfo = "No certificates provided by server"
+		}
+		logger.Warn("Certificate verification failed for %s. %s", host, certInfo)
 		tlsClientConn.Close()
 		remoteConn.Close()
 		return
@@ -280,7 +292,7 @@ func (s *ProxyServer) connectToRemote(ctx context.Context, host, port, clientAdd
 	return remoteConn, nil
 }
 
-func (s *ProxyServer) verifyServerCert(conn *tls.Conn, host string) bool {
+func (s *ProxyServer) verifyServerCert(conn *tls.Conn, host, targetSNI string) bool {
 	policy, ok := s.Rules.GetCertVerify(host)
 	if !ok {
 		policy, _ = config.ParseCertPolicy(s.Config.CheckHostname)
@@ -308,13 +320,21 @@ func (s *ProxyServer) verifyServerCert(conn *tls.Conn, host string) bool {
 		return false
 	}
 
-	// Standard check
-	if !tlsutil.MatchHostname(cert, host, policy) {
-		logger.Debug("Hostname %s does not match cert domains %v", host, cert.DNSNames)
-		return false
+	// Standard check: verify against original host
+	if tlsutil.MatchHostname(cert, host, policy) {
+		return true
 	}
 
-	return true
+	// If SNI was altered, also allow certificates matching the altered SNI
+	if targetSNI != "" && targetSNI != host {
+		if tlsutil.MatchHostname(cert, targetSNI, policy) {
+			logger.Debug("Verified cert against altered SNI: %s", targetSNI)
+			return true
+		}
+	}
+
+	logger.Debug("Hostname %s (SNI: %s) does not match cert domains %v", host, targetSNI, cert.DNSNames)
+	return false
 }
 
 func (s *ProxyServer) directTunnel(ctx context.Context, clientConn net.Conn, host, port string) {

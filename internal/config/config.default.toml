@@ -2,9 +2,9 @@
 # This file is used as the base configuration.
 
 set_proxy = true
-importca = "auto"
-ipv6 = true
-check_hostname = false
+ca_install = "auto"
+ipv6 = false
+check_hostname = true
 ecs = ""
 
 [DNS]

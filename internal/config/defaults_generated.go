@@ -5,10 +5,9 @@ package config
 
 // PreparsedDefaultConfig contains the compile-time parsed default configuration.
 var PreparsedDefaultConfig = Config{
-	CheckHostname: false,
+	CheckHostname: true,
 	SetProxy:      true,
-	ImportCA:      "auto",
-	IPv6:          true,
+	CAInstall:     "auto",
 	DNS: DNSConfig{
 		Nameserver:   []string{"https://dnschina1.soraharu.com/dns-query", "https://77.88.8.8/dns-query", "https://dns.google/dns-query"},
 		BootstrapDNS: []string{"tls://223.5.5.5"},

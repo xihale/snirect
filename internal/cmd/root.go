@@ -10,6 +10,7 @@ import (
 var (
 	cfgFile  string
 	setProxy bool
+	logLevel string
 )
 
 // RootCmd represents the base command when called without any subcommands
@@ -39,6 +40,7 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	RootCmd.Flags().BoolVarP(&setProxy, "set-proxy", "s", false, "Set system proxy automatically")
+	RootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "v", "", "Set log level (debug, info, warn, error)")
 }
 
 func initConfig() {

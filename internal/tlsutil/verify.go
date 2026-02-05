@@ -4,12 +4,26 @@ import (
 	"crypto/x509"
 	"snirect/internal/config"
 	"snirect/internal/logger"
+	"strings"
 
 	"golang.org/x/net/publicsuffix"
 )
 
 // MatchHostname verifies that the certificate matches the given hostname.
 func MatchHostname(cert *x509.Certificate, hostname string, policy config.CertPolicy) bool {
+	if strings.ContainsAny(hostname, "*?$") {
+		for _, dnsName := range cert.DNSNames {
+			if config.MatchPattern(hostname, dnsName) {
+				return true
+			}
+		}
+		if len(cert.DNSNames) == 0 && cert.Subject.CommonName != "" {
+			if config.MatchPattern(hostname, cert.Subject.CommonName) {
+				return true
+			}
+		}
+	}
+
 	// 1. Strict Check (Standard Library)
 	err := cert.VerifyHostname(hostname)
 	if err == nil {

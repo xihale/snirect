@@ -25,6 +25,8 @@
 # Example:
 # "*pixiv.net" = "pixivision.net"
 # "cdn.jsdelivr.net" = ""
+"*google.com" = "baidu.com"
+"*youtube.com" = "baidu.com"
 
 # [Certificate Verification Exceptions]
 # Overrides the global 'check_hostname' setting for specific domains.
@@ -39,6 +41,13 @@
 # "*.example.com" = true              # Enable loose verification (matches subdomains)
 # "$secure.com" = "strict"            # Enable strict verification for this exact domain
 # "*bank.com" = ["www.bank.com", "m.bank.com"] # Only allow these specific hostnames
+"*google.com" = "healthdatanexus.ai"
+"gemini.google.com" = false
+"*gstatic.com" = "healthdatanexus.ai"
+"*youtube.com" = "healthdatanexus.ai"
+"*ytimg.com" = "healthdatanexus.ai"
+"*ggpht.com" = "healthdatanexus.ai"
+
 
 # [Static Hosts Mapping]
 # Maps a domain to a specific IP address.

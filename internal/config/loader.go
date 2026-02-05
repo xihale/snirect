@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"snirect/internal/logger"
 	"sort"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -21,9 +22,25 @@ type Rules struct {
 }
 
 func (r *Rules) Init() {
+	r.AlterHostname = normalizeMap(r.AlterHostname)
+	r.CertVerify = normalizeMap(r.CertVerify)
+	r.Hosts = normalizeMap(r.Hosts)
+
 	r.alterHostnameKeys = getSortedKeys(r.AlterHostname)
 	r.certVerifyKeys = getSortedKeys(r.CertVerify)
 	r.hostsKeys = getSortedKeys(r.Hosts)
+}
+
+func normalizeMap[T any](m map[string]T) map[string]T {
+	if m == nil {
+		return nil
+	}
+	newM := make(map[string]T, len(m))
+	for k, v := range m {
+		newK := strings.TrimPrefix(k, "$")
+		newM[newK] = v
+	}
+	return newM
 }
 
 func getSortedKeys[T any](m map[string]T) []string {
@@ -35,6 +52,25 @@ func getSortedKeys[T any](m map[string]T) []string {
 		return len(keys[i]) > len(keys[j])
 	})
 	return keys
+}
+
+func (r *Rules) DeepCopy() Rules {
+	newR := *r
+	newR.AlterHostname = copyMap(r.AlterHostname)
+	newR.CertVerify = copyMap(r.CertVerify)
+	newR.Hosts = copyMap(r.Hosts)
+	return newR
+}
+
+func copyMap[T any](m map[string]T) map[string]T {
+	if m == nil {
+		return nil
+	}
+	newM := make(map[string]T, len(m))
+	for k, v := range m {
+		newM[k] = v
+	}
+	return newM
 }
 
 func (r *Rules) GetAlterHostname(host string) (string, bool) {
@@ -108,23 +144,39 @@ func LoadConfig(path string) (*Config, error) {
 }
 
 func LoadRules(path string) (*Rules, error) {
-	rules := PreparsedDefaultRules
+	rules := PreparsedDefaultRules.DeepCopy()
+	rules.Init()
 
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		rules.Init()
 		return &rules, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read rules file: %w", err)
 	}
 
-	if err := toml.Unmarshal(data, &rules); err != nil {
+	var userRules Rules
+	if err := toml.Unmarshal(data, &userRules); err != nil {
 		return nil, fmt.Errorf("failed to parse user rules: %w", err)
 	}
+	userRules.Init()
+
+	rules.AlterHostname = mergeMap(rules.AlterHostname, userRules.AlterHostname)
+	rules.CertVerify = mergeMap(rules.CertVerify, userRules.CertVerify)
+	rules.Hosts = mergeMap(rules.Hosts, userRules.Hosts)
 
 	rules.Init()
 	return &rules, nil
+}
+
+func mergeMap[T any](dst, src map[string]T) map[string]T {
+	if dst == nil {
+		dst = make(map[string]T)
+	}
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 func EnsureConfig(force bool) (string, error) {
