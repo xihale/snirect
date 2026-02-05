@@ -3,6 +3,8 @@ name: Build CI
 on:
   push:
     branches: [ main, master ]
+    tags-ignore:
+      - "v*"  # Ignore tags to avoid duplicate builds with Release workflow
   pull_request:
     branches: [ main, master ]
 
