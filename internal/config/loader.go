@@ -82,18 +82,12 @@ func (r *Rules) GetCertVerify(host string) (CertPolicy, bool) {
 }
 
 func LoadConfig(path string) (*Config, error) {
-	var cfg Config
-
-	// 1. Load internal defaults
-	if err := toml.Unmarshal([]byte(DefaultConfigTOML), &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse default config: %w", err)
-	}
+	cfg := PreparsedDefaultConfig
 
 	if cfg.Log.File == "" {
 		cfg.Log.File = GetDefaultLogPath()
 	}
 
-	// 2. Overwrite with user config if it exists
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return &cfg, nil
@@ -106,7 +100,6 @@ func LoadConfig(path string) (*Config, error) {
 		return &cfg, fmt.Errorf("failed to parse user config: %w", err)
 	}
 
-	// Set default log file path if empty
 	if cfg.Log.File == "" {
 		cfg.Log.File = GetDefaultLogPath()
 	}
@@ -115,14 +108,8 @@ func LoadConfig(path string) (*Config, error) {
 }
 
 func LoadRules(path string) (*Rules, error) {
-	var rules Rules
+	rules := PreparsedDefaultRules
 
-	// 1. Load internal default rules
-	if err := toml.Unmarshal([]byte(DefaultRulesTOML), &rules); err != nil {
-		return nil, fmt.Errorf("failed to parse default rules: %w", err)
-	}
-
-	// 2. Overwrite with user rules if they exist
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		rules.Init()
@@ -149,10 +136,10 @@ func EnsureConfig(force bool) (string, error) {
 		return "", err
 	}
 
-	if err := ensureFile(filepath.Join(appDir, "config.toml"), DefaultConfigTOML, force); err != nil {
+	if err := ensureFile(filepath.Join(appDir, "config.toml"), SampleConfigTOML, force); err != nil {
 		return "", err
 	}
-	if err := ensureFile(filepath.Join(appDir, "rules.toml"), DefaultRulesTOML, force); err != nil {
+	if err := ensureFile(filepath.Join(appDir, "rules.toml"), SampleRulesTOML, force); err != nil {
 		return "", err
 	}
 	if err := ensureFile(filepath.Join(appDir, "pac"), DefaultPAC, force); err != nil {

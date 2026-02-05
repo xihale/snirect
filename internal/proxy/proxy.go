@@ -47,8 +47,20 @@ func NewProxyServer(cfg *config.Config, rules *config.Rules, ca *ca.CertManager)
 // Start runs the proxy server on the configured address and port.
 func (s *ProxyServer) Start() error {
 	addr := fmt.Sprintf("%s:%d", s.Config.Server.Address, s.Config.Server.Port)
-	logger.Info("Serving on %s", addr)
-	return http.ListenAndServe(addr, s)
+
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer ln.Close()
+
+	if s.Config.Server.Port == 0 {
+		actualAddr := ln.Addr().(*net.TCPAddr)
+		s.Config.Server.Port = actualAddr.Port
+	}
+
+	logger.Info("Serving on %s", ln.Addr().String())
+	return http.Serve(ln, s)
 }
 
 func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -141,7 +153,7 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	// 4. Perform TLS Handshake (Server-side) to get ClientHello
 	tlsClientConn, clientHelloHost, err := s.handshakeClient(clientConn, host)
 	if err != nil {
-		logger.Debug("TLS Handshake with client failed: %v", err)
+		logger.Warn("TLS Handshake with client failed: %v", err)
 		clientConn.Close()
 		return
 	}
@@ -150,7 +162,7 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	targetSNI := s.determineSNI(host, clientHelloHost)
 	remoteConn, err := s.connectToRemote(r.Context(), host, port, r.RemoteAddr, targetSNI)
 	if err != nil {
-		logger.Debug("Failed to connect to remote %s: %v", host, err)
+		logger.Warn("Failed to connect to remote %s: %v", host, err)
 		tlsClientConn.Close()
 		return
 	}

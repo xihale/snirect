@@ -72,8 +72,6 @@ func TestLoadConfig_Overwrite(t *testing.T) {
 
 	cfgPath := filepath.Join(tmpDir, "config.toml")
 
-	
-
 	userTOML := `
 
 [server]
@@ -88,8 +86,6 @@ port = 9999
 
 	}
 
-
-
 	cfg, err := LoadConfig(cfgPath)
 
 	if err != nil {
@@ -97,8 +93,6 @@ port = 9999
 		t.Fatalf("LoadConfig failed: %v", err)
 
 	}
-
-
 
 	// Verify the overridden field
 
@@ -108,8 +102,6 @@ port = 9999
 
 	}
 
-
-
 	// Verify a field that should still have the default value
 
 	if cfg.Server.Address != "127.0.0.1" {
@@ -118,10 +110,32 @@ port = 9999
 
 	}
 
-
-
 	if cfg.Timeout.Dial != 30 {
 		t.Errorf("expected default dial timeout 30, got %d", cfg.Timeout.Dial)
+	}
+}
+
+func TestEnsureConfig(t *testing.T) {
+	// We need to override GetAppDataDir for testing
+	// But since it's hard to override, we'll just check if it generates files correctly
+	// if we could control the path.
+	// For now, let's just check if SampleConfigTOML is used.
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.toml")
+
+	err := ensureFile(configPath, SampleConfigTOML, false)
+	if err != nil {
+		t.Fatalf("ensureFile failed: %v", err)
+	}
+
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read generated file: %v", err)
+	}
+
+	if string(content) != SampleConfigTOML {
+		t.Errorf("generated file content does not match SampleConfigTOML")
 	}
 }
 

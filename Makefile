@@ -7,17 +7,24 @@ TAGS?=
 
 LDFLAGS=-s -w -X 'snirect/internal/cmd.Version=$(VERSION)'
 
-.PHONY: all build release full upx checksum install uninstall clean cross-all clean-dist
+RULES_URL=https://github.com/SpaceTimee/Cealing-Host/raw/refs/heads/main/Cealing-Host.json
+
+.PHONY: all build release full upx checksum install uninstall clean cross-all clean-dist update-rules generate
 
 all: build
 
+# Generate code
+generate:
+	@echo "Running code generation..."
+	@go generate ./...
+
 # Standard build
-build: generate-completions
+build: generate generate-completions
 	@mkdir -p $(BUILD_DIR)
 	go build -tags "$(TAGS)" -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_PATH)
 
 # Optimized build for release (smaller binary)
-release: generate-completions
+release: generate generate-completions
 	@mkdir -p $(BUILD_DIR)
 	go build -tags "$(TAGS)" -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_PATH)
 
@@ -57,7 +64,7 @@ clean-dist:
 	rm -rf $(BUILD_DIR)
 
 # Simplified Cross-platform builds
-cross-all: clean generate-completions
+cross-all: clean generate generate-completions
 	@mkdir -p $(BUILD_DIR)
 	GOOS=linux GOARCH=amd64 go build -tags "$(TAGS)" -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 $(CMD_PATH) & \
 	GOOS=linux GOARCH=arm64 go build -tags "$(TAGS)" -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 $(CMD_PATH) & \
@@ -70,4 +77,12 @@ cross-all: clean generate-completions
 # Generate checksums
 checksum:
 	cd $(BUILD_DIR) && (sha256sum * > checksums.txt 2>/dev/null || shasum -a 256 * > checksums.txt 2>/dev/null || true)
+
+# Update default rules from upstream
+update-rules:
+	@echo "Updating rules.default.toml from $(RULES_URL)..."
+	@curl -sSL $(RULES_URL) -o internal/config/rules.raw.json
+	@go run internal/config/tools/convert_rules/main.go internal/config/rules.raw.json internal/config/rules.default.toml
+	@rm internal/config/rules.raw.json
+	@echo "Done."
 

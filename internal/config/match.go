@@ -1,7 +1,7 @@
 package config
 
 import (
-	"path/filepath"
+	"path"
 	"strings"
 )
 
@@ -9,17 +9,22 @@ func MatchPattern(pattern, host string) bool {
 	if strings.HasPrefix(pattern, "#") {
 		return false
 	}
+
+	// Strip strict prefix if present. In Snirect, $ usually indicates an exact match
+	// or a specific rule type, but for domain matching we treat the remainder as the pattern.
 	pattern = strings.TrimPrefix(pattern, "$")
 
-	if matched, _ := filepath.Match(pattern, host); matched {
-		return true
-	}
-
+	// Special case: *.example.com matches example.com and all subdomains (*.example.com)
 	if strings.HasPrefix(pattern, "*.") {
-		suffix := pattern[1:]
-		if host == suffix[1:] || strings.HasSuffix(host, suffix) {
+		domain := pattern[2:]
+		if host == domain || strings.HasSuffix(host, "."+domain) {
 			return true
 		}
+	}
+
+	// Standard glob match (handles *example.com, example*, and other wildcards)
+	if matched, _ := path.Match(pattern, host); matched {
+		return true
 	}
 
 	return host == pattern

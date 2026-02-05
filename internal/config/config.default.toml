@@ -1,0 +1,33 @@
+# Hardcoded defaults for Snirect
+# This file is used as the base configuration.
+
+set_proxy = true
+importca = "auto"
+ipv6 = true
+check_hostname = false
+ecs = ""
+
+[DNS]
+nameserver = [
+    "https://dnschina1.soraharu.com/dns-query",
+    "https://77.88.8.8/dns-query",
+    "https://dns.google/dns-query"
+]
+bootstrap_dns = ["tls://223.5.5.5"]
+
+[timeout]
+dial = 30
+dns = 5
+
+[limit]
+max_connections = 0
+dns_cache_size = 10000
+
+[log]
+loglevel = "INFO"
+logfile = ""
+
+[server]
+address = "127.0.0.1"
+port = 7654
+pac_host = "127.0.0.1"
