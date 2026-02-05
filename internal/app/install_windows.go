@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"snirect/internal/config"
 	"snirect/internal/logger"
 )
 
@@ -21,8 +22,14 @@ func getBinPath() string {
 
 func installServicePlatform(binPath string) error {
 	taskName := "Snirect"
+	logPath := config.GetDefaultLogPath()
 
-	cmd := exec.Command("schtasks", "/Create", "/TN", taskName, "/TR", fmt.Sprintf(`"%s"`, binPath),
+	// Ensure log directory exists
+	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
+		logger.Warn("Failed to create log directory: %v", err)
+	}
+
+	cmd := exec.Command("schtasks", "/Create", "/TN", taskName, "/TR", fmt.Sprintf(`"cmd /c \"%s\" >> \"%s\" 2>&1"`, binPath, logPath),
 		"/SC", "ONLOGON", "/RL", "HIGHEST", "/F")
 
 	output, err := cmd.CombinedOutput()

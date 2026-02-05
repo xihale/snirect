@@ -2,6 +2,9 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 )
 
 // CertPolicy represents a certificate verification policy.
@@ -108,4 +111,36 @@ type ServerConfig struct {
 	Address string `toml:"address"`  // Bind address (e.g., "127.0.0.1")
 	Port    int    `toml:"port"`     // Listen port
 	PACHost string `toml:"pac_host"` // Hostname for PAC file generation
+}
+
+// GetDefaultLogPath returns the platform-specific default log file path.
+func GetDefaultLogPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "snirect.log" // Fallback to current directory
+	}
+
+	switch runtime.GOOS {
+	case "linux":
+		// XDG Base Directory: ~/.local/state/snirect/snirect.log
+		// Or ~/.cache/snirect/snirect.log if state is not preferred by some distros, but state is better for logs.
+		// Let's stick to XDG_STATE_HOME or ~/.local/state
+		stateHome := os.Getenv("XDG_STATE_HOME")
+		if stateHome == "" {
+			stateHome = filepath.Join(homeDir, ".local", "state")
+		}
+		return filepath.Join(stateHome, "snirect", "snirect.log")
+	case "darwin":
+		// ~/Library/Logs/snirect/snirect.log
+		return filepath.Join(homeDir, "Library", "Logs", "snirect", "snirect.log")
+	case "windows":
+		// %LOCALAPPDATA%\snirect\Logs\snirect.log
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if localAppData == "" {
+			localAppData = filepath.Join(homeDir, "AppData", "Local")
+		}
+		return filepath.Join(localAppData, "snirect", "Logs", "snirect.log")
+	default:
+		return "snirect.log"
+	}
 }
