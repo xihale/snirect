@@ -62,25 +62,18 @@ func updateLogger(path string) {
 	}
 	writers = append(writers, consoleWriter)
 
+	// Ensure directory exists if path is provided
 	if path != "" {
 		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to create log directory: %v\n", err)
 		}
 		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err == nil {
-			// For file output, use standard JSON or Text handler for better machine readability, or simple text
-			// Using basic text handler for file to keep it simple but structured
 			writers = append(writers, f)
 		} else {
 			fmt.Fprintf(os.Stderr, "Failed to open log file: %v\n", err)
 		}
 	}
-
-	// We need a custom handler that writes formatted text to console and standard log to file
-	// Since slog.New takes one handler, we'll wrap them using a MultiHandler approach
-	// or simplify by just using our custom handler for console and writing directly to file if needed.
-	// However, standard slog doesn't support multi-handlers out of the box easily without libraries.
-	// Let's implement a simple wrapper handler.
 
 	handler := &MultiHandler{
 		console: consoleWriter,
@@ -88,8 +81,8 @@ func updateLogger(path string) {
 		level:   logLevel,
 	}
 
+	// If a file writer was added, it's the second writer
 	if len(writers) > 1 {
-		// File writer is the second one
 		handler.file = slog.NewTextHandler(writers[1], &slog.HandlerOptions{
 			Level: logLevel,
 			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
@@ -102,6 +95,12 @@ func updateLogger(path string) {
 	}
 
 	currentLogger = slog.New(handler)
+
+	// Log the initial path info only if file logging is enabled
+	if len(writers) > 1 {
+		absPath, _ := filepath.Abs(path)
+		currentLogger.Info(fmt.Sprintf("Logging to file: %s", absPath))
+	}
 }
 
 // MultiHandler dispatches to console (custom) and file (standard text)

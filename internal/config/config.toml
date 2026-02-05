@@ -24,7 +24,7 @@
 #
 # 自动设置系统代理
 # 启动时自动将 Snirect 设置为系统代理。
-set_proxy = true
+# set_proxy = true
 
 # [Root CA Installation]
 # Policy for automatically importing and trusting the Snirect Root CA.
@@ -118,10 +118,14 @@ set_proxy = true
 [log]
 # Log level: "DEBUG", "INFO", "WARN", "ERROR".
 # 日志级别: "DEBUG", "INFO", "WARN", "ERROR"。
-# loglevel = "DEBUG"
-# Path to the log file.
+# loglevel = "INFO"
+
 # 日志文件路径。
-# logfile = "log.txt"
+# 如果留空，将使用以下默认系统路径：
+#   Linux:   ~/.local/state/snirect/snirect.log
+#   macOS:   ~/Library/Logs/snirect/snirect.log
+#   Windows: %LOCALAPPDATA%\snirect\Logs\snirect.log
+# logfile = ""
 
 # [Server Settings]
 # Configuration for the Snirect proxy server itself.

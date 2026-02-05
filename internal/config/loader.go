@@ -89,8 +89,6 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse default config: %w", err)
 	}
 
-	// Set default log file path if empty (from defaults or user override)
-	// We do it here initially in case user config doesn't exist
 	if cfg.Log.File == "" {
 		cfg.Log.File = GetDefaultLogPath()
 	}
