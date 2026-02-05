@@ -24,3 +24,8 @@ log.txt
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Generated files
+internal/config/defaults_generated.go
+internal/cmd/completions/
+
