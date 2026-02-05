@@ -41,11 +41,19 @@ func runProxy(cmd *cobra.Command) error {
 		}
 	}
 
-	// Override setproxy from config if flag is explicitly passed
+	isAutoLaunch := sysproxy.IsLaunchedBySystemOrGUI()
+	if isAutoLaunch {
+		sysproxy.DisableColor()
+		logger.SetColorEnabled(false)
+		sysproxy.HideConsole()
+	}
+
 	shouldSetProxy := cfg.SetProxy
 	if cmd.Flags().Changed("set-proxy") {
 		val, _ := cmd.Flags().GetBool("set-proxy")
 		shouldSetProxy = val
+	} else if isAutoLaunch {
+		shouldSetProxy = true
 	}
 
 	// Init Logger
@@ -128,6 +136,7 @@ func runProxy(cmd *cobra.Command) error {
 
 	// 6. Set System Proxy
 	if shouldSetProxy {
+		time.Sleep(100 * time.Millisecond)
 		pacURL := fmt.Sprintf("http://127.0.0.1:%d/pac/?t=%d", cfg.Server.Port, time.Now().Unix())
 		sysproxy.SetPAC(pacURL)
 		defer sysproxy.ClearPAC()

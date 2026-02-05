@@ -4,11 +4,30 @@ package sysproxy
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+	"unsafe"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 	"snirect/internal/logger"
+)
+
+var (
+	modwininet            = windows.NewLazySystemDLL("wininet.dll")
+	procInternetSetOption = modwininet.NewProc("InternetSetOptionW")
+
+	kernel32              = windows.NewLazySystemDLL("kernel32.dll")
+	user32                = windows.NewLazySystemDLL("user32.dll")
+	procGetConsoleProcess = kernel32.NewProc("GetConsoleProcessList")
+	procGetConsoleWindow  = kernel32.NewProc("GetConsoleWindow")
+	procShowWindow        = user32.NewProc("ShowWindow")
+)
+
+const (
+	INTERNET_OPTION_SETTINGS_CHANGED = 39
+	INTERNET_OPTION_REFRESH          = 37
 )
 
 func checkEnvPlatform(env map[string]string) {
@@ -105,7 +124,9 @@ func setPACPlatform(pacURL string) {
 		return
 	}
 
-	logger.Info("系统代理设置成功。部分应用可能需要重启才能生效。")
+	notifyProxyChange()
+
+	logger.Info("系统代理设置成功。")
 }
 
 func clearPACPlatform() {
@@ -124,6 +145,62 @@ func clearPACPlatform() {
 		logger.Debug("删除 AutoConfigURL 失败: %v", err)
 	}
 
+	notifyProxyChange()
+
 	logger.Info("系统代理已清除。")
 }
 
+func notifyProxyChange() {
+	for i := 0; i < 3; i++ {
+		procInternetSetOption.Call(0, uintptr(INTERNET_OPTION_SETTINGS_CHANGED), 0, 0)
+		procInternetSetOption.Call(0, uintptr(INTERNET_OPTION_REFRESH), 0, 0)
+		if i < 2 {
+			windows.SleepEx(100, false)
+		}
+	}
+}
+
+func isLaunchedBySystemOrGUIPlatform() bool {
+	var ids [2]uint32
+	ret, _, _ := procGetConsoleProcess.Call(
+		uintptr(unsafe.Pointer(&ids[0])),
+		uintptr(2),
+	)
+
+	if ret > 1 {
+		return false
+	}
+
+	sessionID := os.Getenv("SESSIONNAME")
+	return sessionID != "" && !strings.Contains(strings.ToUpper(sessionID), "CONSOLE")
+}
+
+func hideConsolePlatform() {
+	hwnd, _, _ := procGetConsoleWindow.Call()
+	if hwnd == 0 {
+		return
+	}
+
+	procShowWindow.Call(hwnd, windows.SW_HIDE)
+}
+
+func disableColorPlatform() {
+	kernel32 := windows.NewLazySystemDLL("kernel32.dll")
+	setConsoleMode := kernel32.NewProc("SetConsoleMode")
+	getStdHandle := kernel32.NewProc("GetStdHandle")
+
+	const (
+		STD_OUTPUT_HANDLE = uint32(0xfffffff5)
+		STD_ERROR_HANDLE  = uint32(0xfffffff4)
+	)
+
+	handleOut, _, _ := getStdHandle.Call(uintptr(STD_OUTPUT_HANDLE))
+	handleErr, _, _ := getStdHandle.Call(uintptr(STD_ERROR_HANDLE))
+
+	if handleOut != 0 && handleOut != uintptr(windows.InvalidHandle) {
+		setConsoleMode.Call(handleOut, 0)
+	}
+	if handleErr != 0 && handleErr != uintptr(windows.InvalidHandle) {
+		setConsoleMode.Call(handleErr, 0)
+	}
+}

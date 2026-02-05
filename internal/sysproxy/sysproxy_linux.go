@@ -253,8 +253,6 @@ func getDesktopEnvironment() string {
 	return xdg
 }
 
-
-
 func setGnomeProxy(pacURL string) {
 	runCommand("gsettings", "set", "org.gnome.system.proxy", "mode", "auto")
 	runCommand("gsettings", "set", "org.gnome.system.proxy", "autoconfig-url", pacURL)
@@ -291,3 +289,11 @@ func runCommand(name string, args ...string) {
 		logger.Debug("Executed: %s %s", name, strings.Join(args, " "))
 	}
 }
+
+func isLaunchedBySystemOrGUIPlatform() bool {
+	return false
+}
+
+func hideConsolePlatform() {}
+
+func disableColorPlatform() {}

@@ -170,3 +170,10 @@ func getNetworkInterfaces() ([]string, error) {
 	return interfaces, nil
 }
 
+func isLaunchedBySystemOrGUIPlatform() bool {
+	return false
+}
+
+func hideConsolePlatform() {}
+
+func disableColorPlatform() {}

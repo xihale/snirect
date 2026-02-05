@@ -88,3 +88,15 @@ func SetPAC(pacURL string) {
 func ClearPAC() {
 	clearPACPlatform()
 }
+
+func IsLaunchedBySystemOrGUI() bool {
+	return isLaunchedBySystemOrGUIPlatform()
+}
+
+func HideConsole() {
+	hideConsolePlatform()
+}
+
+func DisableColor() {
+	disableColorPlatform()
+}

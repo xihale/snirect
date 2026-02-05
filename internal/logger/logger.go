@@ -10,20 +10,46 @@ import (
 )
 
 var (
-	sugar *zap.SugaredLogger
-	atom  zap.AtomicLevel
+	sugar        *zap.SugaredLogger
+	atom         zap.AtomicLevel
+	disableColor bool
 )
+
+func SetColorEnabled(enabled bool) {
+	disableColor = !enabled
+}
 
 func init() {
 	atom = zap.NewAtomicLevelAt(zap.InfoLevel)
+	updateLogger("")
+}
 
-	// Default setup: only console
-	core := zapcore.NewCore(
-		getConsoleEncoder(true),
+func updateLogger(path string) {
+	var cores []zapcore.Core
+
+	cores = append(cores, zapcore.NewCore(
+		getConsoleEncoder(!disableColor),
 		zapcore.Lock(os.Stderr),
 		atom,
-	)
+	))
 
+	if path != "" {
+		w := zapcore.AddSync(&lumberjack.Logger{
+			Filename:   path,
+			MaxSize:    10,
+			MaxBackups: 3,
+			MaxAge:     28,
+			Compress:   true,
+		})
+
+		cores = append(cores, zapcore.NewCore(
+			getConsoleEncoder(false),
+			w,
+			atom,
+		))
+	}
+
+	core := zapcore.NewTee(cores...)
 	logger := zap.New(core)
 	sugar = logger.Sugar()
 }
@@ -56,37 +82,8 @@ func SetLevel(l string) {
 	}
 }
 
-// SetOutput sets the log output file with rotation
 func SetOutput(path string) error {
-	var cores []zapcore.Core
-
-	// 1. Console Core
-	cores = append(cores, zapcore.NewCore(
-		getConsoleEncoder(true),
-		zapcore.Lock(os.Stderr),
-		atom,
-	))
-
-	// 2. File Core
-	if path != "" {
-		w := zapcore.AddSync(&lumberjack.Logger{
-			Filename:   path,
-			MaxSize:    10, // megabytes
-			MaxBackups: 3,
-			MaxAge:     28, // days
-			Compress:   true,
-		})
-
-		cores = append(cores, zapcore.NewCore(
-			getConsoleEncoder(false),
-			w,
-			atom,
-		))
-	}
-
-	core := zapcore.NewTee(cores...)
-	logger := zap.New(core)
-	sugar = logger.Sugar()
+	updateLogger(path)
 	return nil
 }
 

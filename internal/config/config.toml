@@ -1,5 +1,6 @@
 # Snirect Configuration File
-# ⚠️ Restart the program for changes to take effect.
+# Restart the program for changes to take effect.
+# If an option is commented out, the program will use its internal default value.
 
 # [Certificate Verification Policy]
 # Controls how Snirect verifies the remote server's certificate.
@@ -16,7 +17,7 @@
 #   true     - 宽松校验。允许子域名间的通配匹配。
 #   "strict" - 标准严格校验。建议追求安全的用户开启。
 #   [ "domain1.com", "domain2.com" ] - 仅对列表内的域名开启校验。
-check_hostname = false
+# check_hostname = false
 
 # [System Proxy]
 # Automatically set Snirect as the system proxy on startup.
@@ -24,7 +25,7 @@ check_hostname = false
 #
 # 自动设置系统代理
 # 启动时自动将 Snirect 设置为系统代理。等同于使用 --set-proxy 命令行参数。
-set_proxy = false
+# set_proxy = false
 
 # [Root CA Installation]
 # Policy for automatically importing and trusting the Snirect Root CA.
@@ -39,14 +40,14 @@ set_proxy = false
 #   "auto"   - (默认) 仅在未检测到已信任的证书时尝试安装。
 #   "always" - 每次启动都强制尝试重新安装。
 #   "never"  - 禁用自动安装，需手动处理证书信任。
-importca = "auto"
+# importca = "auto"
 
 # [IPv6 Support]
 # Enable or disable IPv6 support for proxy connections.
 #
 # IPv6 支持
 # 是否开启对 IPv6 的支持。
-ipv6 = true
+# ipv6 = true
 
 # [EDNS Client Subnet (ECS)]
 # Provides your network subnet info to DNS servers to get geographically closer IP results.
@@ -61,7 +62,7 @@ ipv6 = true
 #   "auto"   - 根据您的公网 IP 自动生成。
 #   "子网"   - 使用指定的 CIDR 子网 (例如 "218.102.0.0/24")。
 #   ""       - (默认) 禁用 ECS 功能。
-ecs = ""
+# ecs = ""
 
 # [DNS Settings]
 # Custom DNS resolution settings.
@@ -71,15 +72,15 @@ ecs = ""
 [DNS]
 # List of upstream DNS servers. Supports DoH, DoT, and DoQ.
 # 上游 DNS 服务器列表。支持 DoH、DoT 和 DoQ 格式。
-nameserver = [
-    "https://dnschina1.soraharu.com/dns-query",
-    "https://77.88.8.8/dns-query",
-    "https://dns.google/dns-query"
-]
+# nameserver = [
+#     "https://dnschina1.soraharu.com/dns-query",
+#     "https://77.88.8.8/dns-query",
+#     "https://dns.google/dns-query"
+# ]
 
 # Bootstrap DNS servers used to resolve the hostnames of the nameservers above.
 # 引导 DNS 服务器，用于解析上述加密 DNS 服务器自身的域名。
-bootstrap_dns = ["tls://223.5.5.5"]
+# bootstrap_dns = ["tls://223.5.5.5"]
 
 # [Timeout Settings]
 # Timeouts in seconds.
@@ -88,10 +89,10 @@ bootstrap_dns = ["tls://223.5.5.5"]
 [timeout]
 # Timeout for establishing a connection to a remote server.
 # 连接远程服务器的超时时间。
-dial = 30
+# dial = 30
 # Timeout for DNS queries.
 # DNS 查询超时时间。
-dns = 5
+# dns = 5
 
 # [Resource Limits]
 # Settings to control resource usage.
@@ -100,10 +101,10 @@ dns = 5
 [limit]
 # Maximum number of concurrent connections (0 = unlimited).
 # 最大并发连接数 (0 表示不限制)。
-max_connections = 0
+# max_connections = 0
 # Maximum number of entries in the DNS cache.
 # DNS 缓存的最大条目数。
-dns_cache_size = 10000
+# dns_cache_size = 10000
 
 # [Logging]
 # Configure how Snirect records its activity.
@@ -112,10 +113,10 @@ dns_cache_size = 10000
 [log]
 # Log level: "DEBUG", "INFO", "WARN", "ERROR".
 # 日志级别: "DEBUG", "INFO", "WARN", "ERROR"。
-loglevel = "DEBUG"
+# loglevel = "DEBUG"
 # Path to the log file.
 # 日志文件路径。
-logfile = "log.txt"
+# logfile = "log.txt"
 
 # [Server Settings]
 # Configuration for the Snirect proxy server itself.
@@ -126,14 +127,14 @@ logfile = "log.txt"
 # Use "127.0.0.1" for local access only, "0.0.0.0" to allow access from other devices in the LAN.
 # 绑定地址。
 # 使用 "127.0.0.1" 仅限本机访问；使用 "0.0.0.0" 允许局域网内的其他设备连接。
-address = "127.0.0.1"
+# address = "127.0.0.1"
 
 # Port number for the proxy server (1-65535).
 # 代理服务器端口号 (1-65535)。
-port = 7654
+# port = 7654
 
 # Hostname used in the generated PAC file.
 # If using in a LAN, set this to the IP address of this machine.
 # PAC 文件中的代理主机名。
 # 如果需要在局域网内共享，请将其设置为本机的局域网 IP。
-pac_host = "127.0.0.1"
+# pac_host = "127.0.0.1"
