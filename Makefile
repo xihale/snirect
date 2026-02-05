@@ -27,6 +27,7 @@ full:
 
 # Generate completion scripts for embedding
 generate-completions:
+	@rm -rf internal/cmd/completions
 	@mkdir -p internal/cmd/completions
 	@go run -tags "$(TAGS)" $(CMD_PATH) completion bash > internal/cmd/completions/bash 2>/dev/null || true
 	@go run -tags "$(TAGS)" $(CMD_PATH) completion zsh > internal/cmd/completions/zsh 2>/dev/null || true

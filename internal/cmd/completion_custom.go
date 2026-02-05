@@ -45,12 +45,25 @@ After installation, restart your shell or run the temporary usage command.`,
 }
 
 func dumpCompletion(shell string) error {
+	// Try embedded first
 	data, err := completionsFS.ReadFile("completions/" + shell)
-	if err != nil {
-		return fmt.Errorf("failed to read embedded completion for %s: %w", shell, err)
+	if err == nil && len(data) > 0 {
+		_, err = os.Stdout.Write(data)
+		return err
 	}
-	_, err = os.Stdout.Write(data)
-	return err
+
+	// Fallback to dynamic generation (needed during build/bootstrap)
+	switch shell {
+	case "bash":
+		return GetRootCmd().GenBashCompletion(os.Stdout)
+	case "zsh":
+		return GetRootCmd().GenZshCompletion(os.Stdout)
+	case "fish":
+		return GetRootCmd().GenFishCompletion(os.Stdout, true)
+	case "powershell":
+		return GetRootCmd().GenPowerShellCompletionWithDesc(os.Stdout)
+	}
+	return fmt.Errorf("unknown shell: %s", shell)
 }
 
 func init() {
