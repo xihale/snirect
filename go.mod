@@ -4,19 +4,22 @@ go 1.25.5
 
 require (
 	github.com/AdguardTeam/dnsproxy v0.78.2
+	github.com/magefile/mage v1.15.0
 	github.com/miekg/dns v1.1.72
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/spf13/cobra v1.10.2
+	github.com/xihale/snirect/shared v0.0.0
 	golang.org/x/net v0.48.0
 	golang.org/x/sys v0.39.0
 )
+
+replace github.com/xihale/snirect/shared => /home/xihale/Desktop/learning/snirect-shared
 
 require (
 	github.com/AdguardTeam/golibs v0.35.2 // indirect
 	github.com/ameshkov/dnscrypt/v2 v2.4.0 // indirect
 	github.com/ameshkov/dnsstamps v1.0.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/magefile/mage v1.15.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
