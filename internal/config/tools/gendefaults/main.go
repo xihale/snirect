@@ -126,14 +126,16 @@ func run() error {
 		buf.WriteString(",\n")
 	}
 
-	// Write CertVerify
+	// Write CertVerify - ALWAYS initialize to avoid nil map panics during Merge
+	buf.WriteString("\t\tCertVerify: ")
 	if rules.CertVerify != nil && len(rules.CertVerify) > 0 {
-		buf.WriteString("\t\tCertVerify: ")
 		if err := writeValue(&buf, reflect.ValueOf(rules.CertVerify), 2); err != nil {
 			return fmt.Errorf("failed to generate CertVerify: %w", err)
 		}
-		buf.WriteString(",\n")
+	} else {
+		buf.WriteString("map[string]interface{}{}")
 	}
+	buf.WriteString(",\n")
 
 	// Write Hosts
 	if rules.Hosts != nil && len(rules.Hosts) > 0 {
