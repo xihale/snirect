@@ -13,6 +13,10 @@ import (
 // AutoMarker is a special value to override fetched rules with default DNS behavior.
 // When used in rules.toml, it disables the fetched rule for that domain,
 // allowing it to use the program's configured DoH/DNS settings instead.
+//
+// Special markers:
+//   - "__AUTO__": Use default DNS for hosts mapping (disable fetched IP)
+//   - Keep alter_hostname unset (use fetched rules, may strip SNI)
 const AutoMarker = "__AUTO__"
 
 // Rules wraps shared library's Rules for compatibility.
