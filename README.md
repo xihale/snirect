@@ -136,7 +136,86 @@ Snirect 主要通过 PAC (Proxy Auto-Config) 进行系统级代理设置：
 - **配置文件路径**:
   - Linux/macOS: `~/.config/snirect/config.toml`
   - Windows: `%APPDATA%\snirect\config.toml`
-- **分流规则**: `rules.toml` 决定了哪些域名需要通过 Snirect 修改 SNI。默认规则同步自 [Cealing-Host](https://github.com/SpaceTimee/Cealing-Host)。
+- **分流规则**: `rules.toml` 决定了哪些域名需要通过 Snirect 修改 SNI。默认规则同步自 [Cealing-Host](https://github.com/SpaceTimee/Ceiling-Host)。
+
+### 规则系统详解
+
+Snirect 使用三层规则系统，优先级从高到低为：**用户规则 > Fetched Rules > 默认规则**。
+
+#### 规则优先级
+
+1. **用户规则** (`~/.config/snirect/rules.toml`)
+   - 用户自定义的规则，优先级最高
+   - 可覆盖或禁用 fetched rules
+
+2. **Fetched Rules** (`internal/config/rules.default.toml`)
+   - 从 Cealing-Host 同步的社区维护规则
+   - 可通过 `go run github.com/magefile/mage updateRules` 更新
+
+3. **默认规则** (代码中定义)
+   - 内置的基础规则，兜底使用
+
+#### 规则配置段
+
+**[alter_hostname] - SNI 伪装规则**
+
+将目标域名映射到另一个域名以进行 SNI 伪装。
+
+| 值类型 | 含义 | 示例 |
+|:---|:---|:---|
+| `域名` | 替换 SNI 为指定域名 | `"*pixiv.net" = "pixivision.net"` |
+| `""` (空) | 剥离 SNI (可能导致 TLS 握手失败) | `"cdn.jsdelivr.net" = ""` |
+| `"__AUTO__"` | 使用默认行为 (保留原始 SNI) | `"example.com" = "__AUTO__"` |
+
+**[cert_verify] - 证书验证例外**
+
+为特定域名覆盖全局的 `check_hostname` 设置。
+
+| 值类型 | 含义 | 示例 |
+|:---|:---|:---|
+| `false` | 禁用主机名验证 | `"internal.corp" = false` |
+| `true` | 启用宽松验证 (匹配子域名) | `"*.example.com" = true` |
+| `"域名"` | 使用指定的证书 | `"*google.com" = "healthdatanexus.ai"` |
+| `["域名1", "域名2"]` | 仅允许多个特定域名 | `"*.redd.it" = ["*.reddit.com", "reddit.com"]` |
+
+**[hosts] - 静态 Host 映射**
+
+将域名映射到指定的 IP 地址，绕过 DNS 解析。
+
+| 值类型 | 含义 | 示例 |
+|:---|:---|:---|
+| `IP 地址` | 使用指定 IP | `"github.com" = "20.27.177.113"` |
+| `"__AUTO__"` | 使用程序配置的 DoH/DoT DNS | `"example.com" = "__AUTO__"` |
+
+#### 规则匹配模式
+
+| 模式 | 匹配规则 | 示例 |
+|:---|:---|:---|
+| `*example.com` | 匹配所有以 example.com 结尾的域名 | `*google.com` 匹配 `www.google.com`, `mail.google.com` |
+| `example*` | 匹配所有以 example 开头的域名 | `example*` 匹配 `example.com`, `example.org` |
+| `$example.com` | 精确匹配，仅匹配该域名本身 | `$github.com` 不匹配 `www.github.com` |
+| `#...` | 被注释掉的规则 (不生效) | `# "example.com" = "alt.com"` |
+
+#### `__AUTO__` 标记说明
+
+`__AUTO__` 是一个特殊标记，用于覆盖 fetched rules，让域名使用程序默认的自动行为：
+
+- **alter_hostname 中**: 保留原始 SNI，不进行任何修改
+- **hosts 中**: 使用程序配置的 DoH/DoT DNS 解析，而非 fetched rules 中的静态 IP
+
+**使用场景示例**:
+
+```toml
+[hosts]
+# Steam 的 fetched rules 使用静态 IP 23.46.197.62
+# 但该 IP 可能失效或被封锁，使用 __AUTO__ 改为 DoH/DoT 动态解析
+"store.steampowered.com" = "__AUTO__"
+
+[alter_hostname]
+# Steam 的 fetched rules 剥离 SNI (值为 "")
+# 如果服务器拒绝空 SNI，可使用 __AUTO__ 保留原始 SNI
+"store.steampowered.com" = "__AUTO__"
+```
 
 </details>
 

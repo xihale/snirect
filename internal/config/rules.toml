@@ -15,22 +15,22 @@
 #   #...          - 被注释掉的规则 (不生效)。
 
  # [SNI Alteration]
- # Maps a target domain to another domain for SNI spoofing.
- # If the value is empty (""), it strips SNI (may cause TLS handshake failures).
- # Use "__AUTO__" to disable fetched rules and use default DoH/DNS behavior.
- #
- # SNI 伪装规则
- # 将目标域名映射到另一个域名以进行 SNI 伪装。
- # 如果值为空 ("")，则剥离 SNI（可能导致 TLS 握手失败）。
- # 使用 "__AUTO__" 禁用 fetched rules，使用默认 DoH/DNS 行为。
-[alter_hostname]
+  # Maps a target domain to another domain for SNI spoofing.
+  # If the value is empty (""), it strips SNI (may cause TLS handshake failures).
+  # Use "__AUTO__" to preserve original SNI (no modification).
+  #
+  # SNI 伪装规则
+  # 将目标域名映射到另一个域名以进行 SNI 伪装。
+  # 如果值为空 ("")，则剥离 SNI（可能导致 TLS 握手失败）。
+  # 使用 "__AUTO__" 保留原始 SNI（不进行任何修改）。
+ [alter_hostname]
 # Example:
 # "*pixiv.net" = "pixivision.net"
 # "cdn.jsdelivr.net" = ""
 
-# Use __AUTO__ to disable fetched rules for specific domains
-# 使用 __AUTO__ 禁用特定域名的 fetched rules
-"store.steampowered.com" = "__AUTO__"
+# Example: Use __AUTO__ to preserve original SNI
+# 示例：使用 __AUTO__ 保留原始 SNI
+# "example.com" = "__AUTO__"
 
 "*.google.com.hk" = "g.cn"
 
@@ -59,19 +59,19 @@
 "*.objects-origin.githubusercontent.com" = ["*.actions.githubusercontent.com", "actions.githubusercontent.com"]
 
 
- # [Static Hosts Mapping]
- # Maps a domain to a specific IP address.
- # Use "__AUTO__" to disable fetched rules and use default DNS.
- #
- # 静态 Host 映射
- # 将域名映射到指定的 IP 地址。
- # 使用 "__AUTO__" 禁用 fetched rules，使用默认 DNS。
-[hosts]
+  # [Static Hosts Mapping]
+  # Maps a domain to a specific IP address.
+  # Use "__AUTO__" to use DoH/DoT DNS instead of static IP from fetched rules.
+  #
+  # 静态 Host 映射
+  # 将域名映射到指定的 IP 地址。
+  # 使用 "__AUTO__" 使用 DoH/DoT DNS，而非 fetched rules 中的静态 IP。
+ [hosts]
 # Example:
 # "github.com" = "20.27.177.113"
 
-# Disable Steam's static host mapping from fetched rules
-# 禁用 fetched rules 中 Steam 的静态 host 映射
+# Example: Use __AUTO__ for dynamic DNS (DoH/DoT) instead of static IP
+# 示例：使用 __AUTO__ 通过 DoH/DoT 动态解析，而非静态 IP
 "store.steampowered.com" = "__AUTO__"
 
 "$*.google.com.hk" = "34.49.133.3"
