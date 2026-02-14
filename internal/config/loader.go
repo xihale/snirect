@@ -10,12 +10,19 @@ import (
 	ruleslib "github.com/xihale/snirect-shared/rules"
 )
 
+// AutoMarker is a special value to override fetched rules with default DNS behavior.
+// When used in rules.toml, it disables the fetched rule for that domain,
+// allowing it to use the program's configured DoH/DNS settings instead.
+const AutoMarker = "__AUTO__"
+
 // Rules wraps shared library's Rules for compatibility.
 type Rules struct {
 	*ruleslib.Rules
 }
 
 // LoadRules loads rules from a file, merging with default rules.
+// User rules can override fetched rules using AutoMarker ("__AUTO__")
+// to disable specific rules and use default DNS/behavior instead.
 func LoadRules(path string) (*Rules, error) {
 	defaultRules := PreparsedDefaultRules.DeepCopy()
 
@@ -32,8 +39,38 @@ func LoadRules(path string) (*Rules, error) {
 		return nil, fmt.Errorf("failed to parse user rules: %w", err)
 	}
 
-	defaultRules.Merge(userRules)
+	mergeRulesWithOverride(defaultRules, userRules)
 	return &Rules{Rules: defaultRules}, nil
+}
+
+// mergeRulesWithOverride merges user rules into default rules.
+// If a user rule value is AutoMarker ("__AUTO__"), that key is removed from default rules,
+// allowing the domain to use default DNS behavior instead of fetched rules.
+func mergeRulesWithOverride(base, user *ruleslib.Rules) {
+	for k, v := range user.AlterHostname {
+		if v == AutoMarker {
+			delete(base.AlterHostname, k)
+		} else {
+			base.AlterHostname[k] = v
+		}
+	}
+	for k, v := range user.CertVerify {
+		if v == AutoMarker {
+			delete(base.CertVerify, k)
+		} else {
+			base.CertVerify[k] = v
+		}
+	}
+	for k, v := range user.Hosts {
+		if v == AutoMarker {
+			delete(base.Hosts, k)
+		} else {
+			base.Hosts[k] = v
+		}
+	}
+
+	// Reinitialize sorted keys using base's Init method
+	base.Init()
 }
 
 // LoadConfig loads configuration from a file.
