@@ -25,9 +25,7 @@
 # Example:
 # "*pixiv.net" = "pixivision.net"
 # "cdn.jsdelivr.net" = ""
-"*google.com" = "baidu.com"
-"*.google.com.hk" = ""
-"*youtube.com" = "baidu.com"
+"*.google.com.hk" = "g.cn"
 
 # [Certificate Verification Exceptions]
 # Overrides the global 'check_hostname' setting for specific domains.
