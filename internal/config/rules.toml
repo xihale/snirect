@@ -26,6 +26,7 @@
 # "*pixiv.net" = "pixivision.net"
 # "cdn.jsdelivr.net" = ""
 "*google.com" = "baidu.com"
+"*.google.com.hk" = ""
 "*youtube.com" = "baidu.com"
 
 # [Certificate Verification Exceptions]
@@ -61,3 +62,4 @@
 [hosts]
 # Example:
 # "github.com" = "20.27.177.113"
+"$*.google.com.hk" = "34.49.133.3"
