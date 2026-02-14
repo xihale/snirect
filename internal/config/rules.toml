@@ -50,6 +50,7 @@
 "www.redditstatic.com" = ["*.reddit.com", "reddit.com"]
 "*.redd.it" = ["*.reddit.com", "reddit.com"]
 "*.redditmedia.com" = ["*.reddit.com", "reddit.com"]
+"*.objects-origin.githubusercontent.com" = ["*.actions.githubusercontent.com", "actions.githubusercontent.com"]
 
 
 # [Static Hosts Mapping]
