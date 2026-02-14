@@ -8,7 +8,7 @@ require (
 	github.com/miekg/dns v1.1.72
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/spf13/cobra v1.10.2
-	github.com/xihale/snirect-shared v1.0.0
+	github.com/xihale/snirect-shared v1.1.0
 	golang.org/x/net v0.48.0
 	golang.org/x/sys v0.39.0
 )
