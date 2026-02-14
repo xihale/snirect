@@ -47,6 +47,9 @@
 "*youtube.com" = "healthdatanexus.ai"
 "*ytimg.com" = "healthdatanexus.ai"
 "*ggpht.com" = "healthdatanexus.ai"
+"www.redditstatic.com" = ["*.reddit.com", "reddit.com"]
+"*.redd.it" = ["*.reddit.com", "reddit.com"]
+"*.redditmedia.com" = ["*.reddit.com", "reddit.com"]
 
 
 # [Static Hosts Mapping]
