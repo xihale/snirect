@@ -27,12 +27,12 @@ func LoadRules(path string) (*Rules, error) {
 		return nil, fmt.Errorf("failed to read rules file: %w", err)
 	}
 
-	var userRules ruleslib.Rules
+	userRules := ruleslib.NewRules()
 	if err := userRules.FromTOML(data); err != nil {
 		return nil, fmt.Errorf("failed to parse user rules: %w", err)
 	}
 
-	defaultRules.Merge(&userRules)
+	defaultRules.Merge(userRules)
 	return &Rules{Rules: defaultRules}, nil
 }
 
