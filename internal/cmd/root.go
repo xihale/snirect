@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -24,6 +25,8 @@ Supports: Linux, macOS, and Windows`,
 	CompletionOptions: cobra.CompletionOptions{
 		DisableDefaultCmd: true,
 	},
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runProxy(cmd)
 	},
@@ -31,7 +34,13 @@ Supports: Linux, macOS, and Windows`,
 
 func Execute() {
 	if err := RootCmd.Execute(); err != nil {
-		fmt.Println(err)
+		// 参数错误（flagErrors、未知命令）需要显示 usage
+		// 这些错误通常包含 "flag" 关键词
+		if strings.Contains(err.Error(), "flag") {
+			RootCmd.Usage()
+		}
+		// Runtime errors: 只打印错误，不显示 usage
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
