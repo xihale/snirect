@@ -9,12 +9,13 @@ import ruleslib "github.com/xihale/snirect-shared/rules"
 //go:embed config.default.toml
 var DefaultConfigTOML string
 
-var DefaultRulesTOML = ruleslib.FetchedRulesTOML
+var DefaultRulesTOML = ruleslib.DefaultRulesTOML
 
 //go:embed config.toml
 var SampleConfigTOML string
 
-var SampleRulesTOML = ruleslib.UserRulesTOML
+// SampleRulesTOML is not available in the shared rules package; leave empty.
+var SampleRulesTOML = ""
 
 //go:embed pac
 var DefaultPAC string

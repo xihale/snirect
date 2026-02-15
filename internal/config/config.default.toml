@@ -3,7 +3,7 @@
 
 set_proxy = true
 ca_install = "auto"
-ipv6 = false
+ipv6 = true
 check_hostname = true
 ecs = ""
 
@@ -31,3 +31,25 @@ logfile = ""
 address = "127.0.0.1"
 port = 7654
 pac_host = "127.0.0.1"
+
+[preference]
+# Mode: standard (current), fastest (test both), ipv6 (force v6), ipv4 (force v4)
+mode = "standard"
+
+# When mode="fastest", whether to actually test latency or just use first
+enable_testing = true
+
+# Timeout for each connection test in milliseconds
+test_timeout_ms = 500
+
+# Test IPs in parallel (true) or sequentially (false)
+test_parallel = true
+
+# Maximum number of IPs to test per query (to avoid too many goroutines)
+max_test_ips = 10
+
+# Preference cache TTL in seconds (0 = use DNS TTL / 2)
+cache_ttl = 216000
+
+# Maximum number of entries in preference cache (0 = unlimited)
+cache_size = 5000

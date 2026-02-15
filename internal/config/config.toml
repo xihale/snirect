@@ -87,6 +87,65 @@
 # 引导 DNS 服务器，用于解析上述加密 DNS 服务器自身的域名。
 # bootstrap_dns = ["tls://223.5.5.5"]
 
+# [DNS IP Preference]
+# Controls how Snirect selects between IPv6 and IPv4 addresses when both are available.
+# Requires ipv6 = true to function (IPv6 must be enabled).
+#
+# DNS IP 优选策略
+# 控制 Snirect 在有 IPv6 和 IPv4 地址时如何选择。
+# 需要先开启 ipv6 = true 才会生效。
+[preference]
+# Mode: standard, fastest, ipv6, ipv4
+#   standard - (Default) Prefer IPv6 if available, otherwise first available
+#   fastest  - Test connection latency to all IPs and use the fastest (cached)
+#   ipv6     - Always prefer IPv6 when available (no testing)
+#   ipv4     - Force IPv4 only
+#
+# 模式: standard (标准), fastest (最快), ipv6 (强制v6), ipv4 (强制v4)
+mode = "standard"
+
+# When mode="fastest", whether to actually test latency.
+# If false, behaves like "standard" (no testing overhead).
+#
+# 在 fastest 模式下是否实际进行延迟测试。
+# 若为 false，则退化为 standard 模式（无测试开销）。
+enable_testing = true
+
+# Timeout for each connection test in milliseconds.
+# Lower = faster fallback, higher = more accurate.
+# 每个连接测试的超时时间（毫秒）。
+test_timeout_ms = 500
+
+# Test multiple IPs in parallel (true) or sequentially (false).
+# Parallel is faster but uses more resources.
+#
+# 并行 (true) 或 顺序 (false) 测试多个 IP。
+# 并行更快但占用更多资源。
+test_parallel = true
+
+# Maximum number of IPs to test per query.
+# Set to conserve resources when many IPs are available (e.g., CDNs).
+#
+# 每次查询最多测试的 IP 数量。
+# 当可用 IP 很多时（如 CDN）可限制资源消耗。
+max_test_ips = 10
+
+# Preference cache TTL in seconds.
+# 0 = automatically use half of the DNS record's TTL.
+# Shorter TTL = adapt to network changes faster.
+#
+# 优选结果缓存时间（秒）。
+# 0 = 自动使用 DNS 记录 TTL 的一半。
+# 较短的 TTL 能更快适应网络变化。
+cache_ttl = 300
+
+# Maximum entries in preference cache (0 = unlimited).
+# PrefCache is separate from DNS cache and usually much smaller.
+#
+# 优选缓存的最大条目数 (0 = 不限制)。
+# 优选缓存独立于 DNS 缓存，通常小得多。
+cache_size = 5000
+
 # [Timeout Settings]
 # Timeouts in seconds.
 #

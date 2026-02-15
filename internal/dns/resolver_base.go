@@ -25,13 +25,19 @@ type cacheEntry struct {
 	expiresAt time.Time
 }
 
+type ipRecord struct {
+	ip  string
+	ttl uint32
+}
+
 type Resolver struct {
 	Config  *config.Config
 	Rules   *config.Rules
 	backend dnsBackend
 
-	cache   map[string]cacheEntry
-	cacheMu sync.RWMutex
+	cache     map[string]cacheEntry
+	cacheMu   sync.RWMutex
+	prefCache *preferenceCache
 
 	autoECSNet4  *net.IPNet
 	autoECSNet6  *net.IPNet
@@ -62,9 +68,10 @@ func (h *discardHandler) WithGroup(name string) slog.Handler {
 // NewResolver creates a new Resolver instance based on the provided configuration.
 func NewResolver(cfg *config.Config, rules *config.Rules) *Resolver {
 	r := &Resolver{
-		Config: cfg,
-		Rules:  rules,
-		cache:  make(map[string]cacheEntry),
+		Config:    cfg,
+		Rules:     rules,
+		cache:     make(map[string]cacheEntry),
+		prefCache: newPreferenceCache(cfg.Preference.CacheSize),
 	}
 
 	r.backend = newBackend(cfg, rules)
@@ -155,7 +162,7 @@ func (r *Resolver) Resolve(ctx context.Context, host string, clientIP net.IP) (s
 		return r.resolveSystem(ctx, host, target)
 	}
 
-	ip, err := r.resolveStrictIPv6(ctx, target, clientIP)
+	ip, err := r.resolveWithPreference(ctx, target, clientIP)
 	if err == nil {
 		return ip, nil
 	}
@@ -190,33 +197,186 @@ func (r *Resolver) resolveSystem(ctx context.Context, host, target string) (stri
 	return selectedIP, nil
 }
 
-func (r *Resolver) resolveStrictIPv6(ctx context.Context, target string, clientIP net.IP) (string, error) {
-	if r.Config.IPv6 {
-		if ip, ok := r.getCache(target, dns.TypeAAAA); ok {
-			logger.Debug("DNS: %s -> %s (AAAA) from cache", target, ip)
-			return ip, nil
-		}
+func (r *Resolver) resolveWithPreference(ctx context.Context, target string, clientIP net.IP) (string, error) {
+	// 1. Check preference cache
+	if ip, ok := r.getPreference(target); ok {
+		logger.Debug("DNS: %s -> %s (pref cache)", target, ip)
+		return ip, nil
+	}
 
-		ip, ttl, err := r.lookupType(ctx, target, dns.TypeAAAA, clientIP)
+	// 2. IPv6 disabled -> IPv4 only
+	if !r.Config.IPv6 {
+		ip, ttl, err := r.lookupType(ctx, target, dns.TypeA, clientIP)
 		if err == nil {
-			r.setCache(target, ip, dns.TypeAAAA, ttl)
-			return ip, nil
+			r.setPreference(target, ip, ttl)
 		}
-		logger.Debug("DNS: AAAA lookup failed for %s: %v, falling back to A", target, err)
+		return ip, err
 	}
 
-	if ip, ok := r.getCache(target, dns.TypeA); ok {
-		logger.Debug("DNS: %s -> %s (A) from cache", target, ip)
-		return ip, nil
+	// 3. Choose based on preference mode
+	mode := r.Config.Preference.Mode
+	switch mode {
+	case config.IPPreferenceFastest:
+		return r.resolveFastest(ctx, target, clientIP)
+	case config.IPPreferenceIPv4:
+		ip, ttl, err := r.lookupType(ctx, target, dns.TypeA, clientIP)
+		if err == nil {
+			r.setPreference(target, ip, ttl)
+		}
+		return ip, err
+	default: // standard, ipv6, or unknown
+		ip, ttl, err := r.resolveStandard(ctx, target, clientIP)
+		if err == nil {
+			r.setPreference(target, ip, ttl)
+		}
+		return ip, err
+	}
+}
+
+// resolveStandard performs the standard resolution: if IPv6 is enabled, try AAAA first then fallback to A.
+func (r *Resolver) resolveStandard(ctx context.Context, target string, clientIP net.IP) (string, uint32, error) {
+	if r.Config.IPv6 {
+		if ip, ttl, err := r.lookupType(ctx, target, dns.TypeAAAA, clientIP); err == nil {
+			return ip, ttl, err
+		}
+	}
+	return r.lookupType(ctx, target, dns.TypeA, clientIP)
+}
+
+// lookupAllAddresses returns all AAAA or A records from a fresh DNS query (bypassing cache).
+func (r *Resolver) lookupAllAddresses(ctx context.Context, target string, qType uint16, clientIP net.IP) ([]ipRecord, error) {
+	m := r.buildMessage(target, qType, clientIP)
+	reply, addr, err := r.backend.Exchange(m)
+	if err != nil {
+		return nil, err
+	}
+	if reply.Rcode != dns.RcodeSuccess {
+		return nil, fmt.Errorf("dns rcode %s from %s", dns.RcodeToString[reply.Rcode], addr)
+	}
+	var records []ipRecord
+	for _, ans := range reply.Answer {
+		switch qType {
+		case dns.TypeAAAA:
+			if aaaa, ok := ans.(*dns.AAAA); ok {
+				records = append(records, ipRecord{ip: aaaa.AAAA.String(), ttl: aaaa.Hdr.Ttl})
+			}
+		case dns.TypeA:
+			if a, ok := ans.(*dns.A); ok {
+				records = append(records, ipRecord{ip: a.A.String(), ttl: a.Hdr.Ttl})
+			}
+		}
+	}
+	if len(records) == 0 {
+		return nil, fmt.Errorf("no records of type %d found", qType)
+	}
+	return records, nil
+}
+
+// testIPLatency measures the time to establish a TCP connection to ip:port.
+func (r *Resolver) testIPLatency(ctx context.Context, ip, port string, timeout time.Duration) (time.Duration, error) {
+	dialer := &net.Dialer{Timeout: timeout}
+	start := time.Now()
+	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(ip, port))
+	if err != nil {
+		return 0, err
+	}
+	conn.Close()
+	return time.Since(start), nil
+}
+
+// resolveFastest tests all available IPs and selects the one with lowest latency.
+func (r *Resolver) resolveFastest(ctx context.Context, target string, clientIP net.IP) (string, error) {
+	testTimeout := time.Duration(r.Config.Preference.TestTimeoutMs) * time.Millisecond
+	if testTimeout <= 0 {
+		testTimeout = 500 * time.Millisecond
+	}
+	maxIPs := r.Config.Preference.MaxTestIPs
+	if maxIPs <= 0 {
+		maxIPs = 10
 	}
 
-	ip, ttl, err := r.lookupType(ctx, target, dns.TypeA, clientIP)
-	if err == nil {
-		r.setCache(target, ip, dns.TypeA, ttl)
-		return ip, nil
+	// Gather IPs from AAAA and A in parallel
+	type lookupRes struct {
+		ips []ipRecord
+		err error
+	}
+	lookupCh := make(chan lookupRes, 2)
+
+	go func() {
+		ips, err := r.lookupAllAddresses(ctx, target, dns.TypeAAAA, clientIP)
+		lookupCh <- lookupRes{ips: ips, err: err}
+	}()
+	go func() {
+		ips, err := r.lookupAllAddresses(ctx, target, dns.TypeA, clientIP)
+		lookupCh <- lookupRes{ips: ips, err: err}
+	}()
+
+	var allIPs []ipRecord
+	for i := 0; i < 2; i++ {
+		res := <-lookupCh
+		if res.err == nil {
+			allIPs = append(allIPs, res.ips...)
+		} else {
+			logger.Debug("DNS: %s lookup error during fastest: %v", target, res.err)
+		}
 	}
 
-	return "", err
+	if len(allIPs) == 0 {
+		logger.Warn("DNS: Fastest mode: no IPs for %s, falling back to standard", target)
+		ip, _, err := r.resolveStandard(ctx, target, clientIP)
+		return ip, err
+	}
+	if len(allIPs) > maxIPs {
+		allIPs = allIPs[:maxIPs]
+	}
+
+	// Test latencies concurrently
+	type testResult struct {
+		ip      string
+		latency time.Duration
+		err     error
+	}
+	testCh := make(chan testResult, len(allIPs))
+	var wg sync.WaitGroup
+
+	for _, info := range allIPs {
+		wg.Add(1)
+		go func(ip string) {
+			defer wg.Done()
+			lat, err := r.testIPLatency(ctx, ip, "443", testTimeout)
+			testCh <- testResult{ip: ip, latency: lat, err: err}
+		}(info.ip)
+	}
+	wg.Wait()
+	close(testCh)
+
+	var bestIP string
+	var bestLatency time.Duration = 1<<63 - 1
+	for tr := range testCh {
+		if tr.err == nil && tr.latency < bestLatency {
+			bestLatency = tr.latency
+			bestIP = tr.ip
+		}
+	}
+
+	if bestIP == "" {
+		logger.Warn("DNS: Fastest mode: all latency tests failed for %s, falling back", target)
+		ip, _, err := r.resolveStandard(ctx, target, clientIP)
+		return ip, err
+	}
+
+	// Find TTL for bestIP
+	bestTTL := uint32(300)
+	for _, info := range allIPs {
+		if info.ip == bestIP {
+			bestTTL = info.ttl
+			break
+		}
+	}
+
+	logger.Info("DNS: Fastest selected %s (latency: %v) from %d IPs", bestIP, bestLatency, len(allIPs))
+	r.setPreference(target, bestIP, bestTTL)
+	return bestIP, nil
 }
 
 func (r *Resolver) lookupType(ctx context.Context, target string, qType uint16, clientIP net.IP) (string, uint32, error) {
@@ -400,5 +560,35 @@ func (r *Resolver) Invalidate(host string) {
 	delete(r.cache, r.cacheKey(host, dns.TypeAAAA))
 	delete(r.cache, r.cacheKey(host, 0)) // System DNS cache
 
+	r.invalidatePreference(host)
+
 	logger.Debug("DNS: Cache invalidated for %s", host)
+}
+
+// getPreference returns the cached preferred IP for the host, if available and not expired.
+func (r *Resolver) getPreference(host string) (string, bool) {
+	return r.prefCache.get(host)
+}
+
+// setPreference stores a preferred IP with appropriate TTL.
+// dnsTTL is the TTL from the DNS record (in seconds). If 0, uses default.
+func (r *Resolver) setPreference(host, ip string, dnsTTL uint32) {
+	// Determine TTL for preference cache
+	ttl := time.Duration(r.Config.Preference.CacheTTL) * time.Second
+	if ttl <= 0 {
+		// Auto: use half of DNS TTL, with bounds
+		halfDNS := time.Duration(dnsTTL) * 500 * time.Millisecond
+		if halfDNS <= 0 {
+			halfDNS = 300 * time.Second // default 5min
+		}
+		ttl = halfDNS
+	}
+
+	r.prefCache.set(host, ip, 0, ttl) // latency not tracked for storage
+	logger.Debug("DNS: Preference cached for %s -> %s (TTL: %v)", host, ip, ttl)
+}
+
+// invalidatePreference removes the cached preference for the host.
+func (r *Resolver) invalidatePreference(host string) {
+	r.prefCache.invalidate(host)
 }

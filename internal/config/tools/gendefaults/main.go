@@ -84,7 +84,7 @@ func run() error {
 		return fmt.Errorf("failed to parse config: %w", err)
 	}
 
-	rulesData := []byte(ruleslib.FetchedRulesTOML)
+	rulesData := []byte(ruleslib.DefaultRulesTOML)
 
 	var rules Rules
 	if err := toml.Unmarshal(rulesData, &rules); err != nil {

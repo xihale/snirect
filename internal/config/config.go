@@ -80,6 +80,36 @@ type Config struct {
 
 	// Server contains local proxy server settings.
 	Server ServerConfig `toml:"server"`
+
+	// Preference contains DNS IP preference settings.
+	Preference PreferenceConfig `toml:"preference"`
+}
+
+// IPPreferenceMode defines how IP selection works when both IPv6 and IPv4 are available.
+type IPPreferenceMode string
+
+const (
+	IPPreferenceStandard IPPreferenceMode = "standard" // Current behavior: prefer v6 if enabled, then first
+	IPPreferenceFastest  IPPreferenceMode = "fastest"  // Test both, use lowest latency (cached)
+	IPPreferenceIPv6     IPPreferenceMode = "ipv6"     // Always prefer IPv6 if available
+	IPPreferenceIPv4     IPPreferenceMode = "ipv4"     // Always prefer IPv4
+)
+
+// PreferenceConfig contains DNS IP preference settings.
+type PreferenceConfig struct {
+	Mode          IPPreferenceMode `toml:"mode"`           // Selection mode
+	EnableTesting bool             `toml:"enable_testing"` // Whether to do latency testing (for fastest mode)
+	// TestTimeoutMs is the timeout for each connection test in milliseconds.
+	// When testing IPs, we dial with this timeout and measure connection establishment time.
+	TestTimeoutMs int `toml:"test_timeout_ms"`
+	// TestParallel determines whether to test all IPs in parallel (true) or sequentially (false).
+	TestParallel bool `toml:"test_parallel"`
+	// MaxTestIPs limits the number of IPs to test per query to avoid resource exhaustion.
+	MaxTestIPs int `toml:"max_test_ips"`
+	// CacheTTL is the preference cache TTL in seconds. 0 means use DNS TTL / 2.
+	CacheTTL int `toml:"cache_ttl"`
+	// CacheSize limits the number of entries in the preference cache. 0 = unlimited.
+	CacheSize int `toml:"cache_size"`
 }
 
 // TimeoutConfig contains timeout settings in seconds.
