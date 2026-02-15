@@ -26,13 +26,50 @@ var (
 	Default = Build
 )
 
-// getVersion returns the version from git tag or fallback
+// getVersion returns the version in format TAGVERSION[-N][-dirty]
+// - TAGVERSION: latest git tag (e.g., v1.0.0)
+// - N (optional): distance (commits ahead) from the tagged commit, only included if > 0
+// - dirty (optional): append "-dirty" if there are unstaged changes
 func getVersion() string {
-	v, err := sh.Output("git", "describe", "--tags", "--always", "--dirty")
+	// Get the latest tag reachable from HEAD
+	tag, err := sh.Output("git", "describe", "--tags", "--abbrev=0")
 	if err != nil {
-		return "0.0.0-dev"
+		// No tags found, fallback to commit hash
+		hash, hashErr := sh.Output("git", "rev-parse", "--short", "HEAD")
+		if hashErr != nil {
+			return "0.0.0-dev"
+		}
+		// Check dirty status
+		if isDirty() {
+			return hash + "-dirty"
+		}
+		return hash
 	}
-	return v
+
+	// Get distance from the tag to HEAD (number of commits)
+	dist, err := sh.Output("git", "rev-list", "--count", tag+"..HEAD")
+	if err != nil || dist == "" {
+		dist = "0"
+	}
+
+	// Build version string: tag only if distance is 0, otherwise tag-distance
+	version := tag
+	if dist != "0" {
+		version = fmt.Sprintf("%s-%s", tag, dist)
+	}
+
+	// Append dirty suffix if there are unstaged changes
+	if isDirty() {
+		version += "-dirty"
+	}
+	return version
+}
+
+// isDirty checks if there are any unstaged changes in the working directory
+func isDirty() bool {
+	// Check modified but unstaged files
+	out, err := sh.Output("git", "status", "--porcelain")
+	return err == nil && strings.TrimSpace(out) != ""
 }
 
 // getLDFLAGS returns the linker flags
