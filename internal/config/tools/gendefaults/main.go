@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
+	ruleslib "github.com/xihale/snirect-shared/rules"
 )
 
 // Minimal type definitions to parse TOML (must match internal/config types)
@@ -67,13 +68,11 @@ func main() {
 }
 
 func run() error {
-	// Determine base directory
 	baseDir := "internal/config"
 	if len(os.Args) > 1 {
 		baseDir = os.Args[1]
 	}
 
-	// Read and parse config
 	configPath := filepath.Join(baseDir, "config.default.toml")
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
@@ -85,12 +84,7 @@ func run() error {
 		return fmt.Errorf("failed to parse config: %w", err)
 	}
 
-	// Read and parse rules
-	rulesPath := filepath.Join(baseDir, "rules.default.toml")
-	rulesData, err := os.ReadFile(rulesPath)
-	if err != nil {
-		return fmt.Errorf("failed to read rules file: %w", err)
-	}
+	rulesData := []byte(ruleslib.FetchedRulesTOML)
 
 	var rules Rules
 	if err := toml.Unmarshal(rulesData, &rules); err != nil {

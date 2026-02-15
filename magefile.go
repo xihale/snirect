@@ -99,18 +99,20 @@ func Clean() {
 	os.RemoveAll(filepath.Join("internal", "cmd", "completions"))
 }
 
-// UpdateRules downloads and converts rules from upstream
+// UpdateRules downloads and converts rules from upstream to shared library
 func UpdateRules() error {
 	fmt.Printf("Updating rules from %s...\n", rulesURL)
 	rawPath := filepath.Join("internal", "config", "rules.raw.json")
-	targetPath := filepath.Join("internal", "config", "rules.default.toml")
+	// Convert and write to shared library
+	targetPath := filepath.Join("..", "snirect-shared", "rules", "fetched.toml")
 
 	if err := sh.RunV("curl", "-sSL", rulesURL, "-o", rawPath); err != nil {
 		return err
 	}
 	defer os.Remove(rawPath)
 
-	return sh.RunV("go", "run", "internal/config/tools/convert_rules/main.go", rawPath, targetPath)
+	// Call convert_rules from shared library
+	return sh.RunV("go", "run", "github.com/xihale/snirect-shared/tools/convert_rules", rawPath, targetPath)
 }
 
 // CrossAll performs cross-platform builds
