@@ -32,24 +32,76 @@ address = "127.0.0.1"
 port = 7654
 pac_host = "127.0.0.1"
 
-[preference]
-# Mode: standard (current), fastest (test both), ipv6 (force v6), ipv4 (force v4)
-mode = "standard"
+ [preference]
+ # Mode: standard, fastest, ipv6, ipv4
+ #   standard - (Default) Prefer IPv6 if available, otherwise first available
+ #   fastest  - Test connection latency to all IPs and use the fastest (cached)
+ #   ipv6     - Always prefer IPv6 when available (no testing)
+ #   ipv4     - Force IPv4 only
+ #
+ # 模式: standard (标准), fastest (最快), ipv6 (强制v6), ipv4 (强制v4)
+ mode = "standard"
 
-# When mode="fastest", whether to actually test latency or just use first
-enable_testing = true
+ # When mode="fastest", whether to actually test latency.
+ # If false, behaves like "standard" (no testing overhead).
+ #
+ # 在 fastest 模式下是否实际进行延迟测试。
+ # 若为 false，则退化为 standard 模式（无测试开销）。
+ enable_testing = true
 
-# Timeout for each connection test in milliseconds
-test_timeout_ms = 500
+ # Timeout for each connection test in milliseconds.
+ # Lower = faster fallback, higher = more accurate.
+ # 每个连接测试的超时时间（毫秒）。
+ test_timeout_ms = 500
 
-# Test IPs in parallel (true) or sequentially (false)
-test_parallel = true
+ # Test multiple IPs in parallel (true) or sequentially (false).
+ # Parallel is faster but uses more resources.
+ #
+ # 并行 (true) 或 顺序 (false) 测试多个 IP。
+ # 并行更快但占用更多资源。
+ test_parallel = true
 
-# Maximum number of IPs to test per query (to avoid too many goroutines)
-max_test_ips = 10
+ # Maximum number of IPs to test per query.
+ # Set to conserve resources when many IPs are available (e.g., CDNs).
+ #
+ # 每次查询最多测试的 IP 数量。
+ # 当可用 IP 很多时（如 CDN）可限制资源消耗。
+ max_test_ips = 10
 
-# Preference cache TTL in seconds (0 = use DNS TTL / 2)
-cache_ttl = 216000
+ # Preference cache TTL in seconds.
+ # 0 = automatically use half of the DNS record's TTL.
+ # Shorter TTL = adapt to network changes faster.
+ #
+ # 优选结果缓存时间（秒）。
+ # 0 = 自动使用 DNS 记录 TTL 的一半。
+ # 较短的 TTL 能更快适应网络变化。
+ cache_ttl = 300
 
-# Maximum number of entries in preference cache (0 = unlimited)
-cache_size = 5000
+ # Maximum entries in preference cache (0 = unlimited).
+ # PrefCache is separate from DNS cache and usually much smaller.
+ #
+ # 优选缓存的最大条目数 (0 = 不限制)。
+ # 优选缓存独立于 DNS 缓存，通常小得多。
+ cache_size = 5000
+
+ [update]
+ # Automatically check for program updates.
+ auto_check_update = true
+
+ # Automatically check for rules updates.
+ auto_check_rules = true
+
+ # Automatically install program updates when available.
+ auto_update = true
+
+ # Automatically install rules updates when available.
+ auto_update_rules = true
+
+ # How often to check for updates (in hours).
+ check_interval_hours = 6
+
+  # How often to check for rules updates (in hours).
+  rules_check_interval_hours = 24
+
+  # Upstream URL for fetching rules (supports TOML or JSON array format).
+  rules_url = "https://github.com/SpaceTimee/Cealing-Host/releases/latest/download/Cealing-Host.toml"

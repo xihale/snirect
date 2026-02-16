@@ -139,12 +139,43 @@ max_test_ips = 10
 # 较短的 TTL 能更快适应网络变化。
 cache_ttl = 300
 
-# Maximum entries in preference cache (0 = unlimited).
-# PrefCache is separate from DNS cache and usually much smaller.
-#
-# 优选缓存的最大条目数 (0 = 不限制)。
-# 优选缓存独立于 DNS 缓存，通常小得多。
-cache_size = 5000
+ # Maximum entries in preference cache (0 = unlimited).
+ # PrefCache is separate from DNS cache and usually much smaller.
+ #
+ # 优选缓存的最大条目数 (0 = 不限制)。
+ # 优选缓存独立于 DNS 缓存，通常小得多。
+ cache_size = 5000
+
+ # [Automatic Updates]
+ # Control automatic checking and updating of rules and the program itself.
+ #
+ # 自动更新设置
+ [update]
+ # Automatically check for program updates on startup.
+ # 启动时自动检查程序更新。
+ # auto_check_update = true
+
+ # Automatically check for rules updates.
+ # 自动检查规则更新。
+ auto_check_rules = true
+
+ # Automatically install program updates when available.
+ # Requires auto_check_update to be true.
+ # 自动安装程序更新（需同时开启自动检查）。
+ # auto_update = true
+
+ # Automatically install rules updates when available.
+ # Requires auto_check_rules to be true.
+ # 自动安装规则更新（需同时开启自动检查）。
+ auto_update_rules = true
+
+ # How often to check for program updates (in hours).
+ # 检查程序更新的间隔时间（小时）。
+ # check_interval_hours = 6
+
+ # How often to check for rules updates (in hours).
+ # 检查规则更新的间隔时间（小时）。
+ rules_check_interval_hours = 24
 
 # [Timeout Settings]
 # Timeouts in seconds.
@@ -177,7 +208,7 @@ cache_size = 5000
 [log]
 # Log level: "DEBUG", "INFO", "WARN", "ERROR".
 # 日志级别: "DEBUG", "INFO", "WARN", "ERROR"。
-# loglevel = "INFO"
+loglevel = "DEBUG"
 
 # 日志文件路径。
 # 如果留空，将使用以下默认系统路径：

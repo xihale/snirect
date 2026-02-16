@@ -83,6 +83,27 @@ type Config struct {
 
 	// Preference contains DNS IP preference settings.
 	Preference PreferenceConfig `toml:"preference"`
+
+	// Update contains auto-update and auto-check settings.
+	Update UpdateConfig `toml:"update"`
+}
+
+// UpdateConfig controls automatic update and rules fetching behavior.
+type UpdateConfig struct {
+	// AutoCheckUpdate enables periodic checking for program updates.
+	AutoCheckUpdate bool `toml:"auto_check_update"`
+	// AutoCheckRules enables periodic checking for rules updates.
+	AutoCheckRules bool `toml:"auto_check_rules"`
+	// AutoUpdate enables automatic program update when a new version is found.
+	AutoUpdate bool `toml:"auto_update"`
+	// AutoUpdateRules enables automatic rules update when new rules are found.
+	AutoUpdateRules bool `toml:"auto_update_rules"`
+	// CheckIntervalHours sets how often to check for updates (in hours).
+	CheckIntervalHours int `toml:"check_interval_hours"`
+	// RulesCheckIntervalHours sets how often to check for rules updates (in hours).
+	RulesCheckIntervalHours int `toml:"rules_check_interval_hours"`
+	// RulesURL specifies the upstream URL for fetching rules (TOML or JSON format).
+	RulesURL string `toml:"rules_url"`
 }
 
 // IPPreferenceMode defines how IP selection works when both IPv6 and IPv4 are available.

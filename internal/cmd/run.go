@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"snirect/internal/ca"
@@ -12,6 +13,7 @@ import (
 	"snirect/internal/logger"
 	"snirect/internal/proxy"
 	"snirect/internal/sysproxy"
+	"snirect/internal/update"
 
 	"github.com/spf13/cobra"
 )
@@ -35,6 +37,68 @@ func runProxy(cmd *cobra.Command) error {
 		logger.Warn("Warning: Failed to load config.toml: %v. Using defaults.", err)
 		if cfg == nil {
 			return fmt.Errorf("critical error: configuration is invalid and defaults could not be loaded")
+		}
+	}
+
+	if update.HasPendingUpdate(appDir) {
+		logger.Info("Pending update detected. Performing self-update...")
+		if err := update.PerformSelfUpdate(appDir); err != nil {
+			logger.Error("Self-update failed: %v", err)
+		} else {
+			return nil
+		}
+	}
+
+	if cfg.Update.AutoCheckRules || cfg.Update.AutoUpdateRules {
+		shouldCheck, err := config.ShouldCheckRules(appDir, time.Duration(cfg.Update.RulesCheckIntervalHours)*time.Hour)
+		if err != nil {
+			logger.Warn("Failed to check rules timestamp: %v", err)
+		} else if shouldCheck && cfg.Update.AutoUpdateRules {
+			logger.Info("Checking for rules updates...")
+			mgr := update.NewManager(cfg, &config.Rules{})
+			if err := mgr.FetchRules(appDir); err != nil {
+				logger.Warn("Auto rules update failed: %v", err)
+			} else {
+				logger.Info("Rules auto-updated successfully")
+			}
+		}
+	}
+
+	if cfg.Update.AutoCheckUpdate || cfg.Update.AutoUpdate {
+		shouldCheck, err := config.ShouldCheckUpdate(appDir, time.Duration(cfg.Update.CheckIntervalHours)*time.Hour)
+		if err != nil {
+			logger.Warn("Failed to check update timestamp: %v", err)
+		} else if shouldCheck {
+			logger.Info("Checking for program updates...")
+			mgr := update.NewManager(cfg, &config.Rules{})
+			hasUpdate, latestVersion, err := mgr.CheckForUpdate(Version)
+			mgr.UpdateCheckTimestamp(appDir)
+			if err != nil {
+				logger.Warn("Auto update check failed: %v", err)
+			} else if hasUpdate && cfg.Update.AutoUpdate {
+				logger.Info("Update available: %s -> %s", Version, latestVersion)
+				assetName := fmt.Sprintf("snirect-%s-%s", runtime.GOOS, runtime.GOARCH)
+				if runtime.GOOS == "windows" {
+					assetName += ".exe"
+				}
+				downloadPath := filepath.Join(mgr.GetTempDownloadDir(appDir), assetName)
+				downloadURL := fmt.Sprintf("https://github.com/xihale/snirect/releases/download/%s/%s", latestVersion, assetName)
+				logger.Info("Downloading update from: %s", downloadURL)
+				if err := mgr.DownloadFile(downloadPath, downloadURL); err != nil {
+					logger.Warn("Auto update download failed: %v", err)
+				} else {
+					if runtime.GOOS != "windows" {
+						os.Chmod(downloadPath, 0755)
+					}
+					if err := mgr.MarkForSelfUpdate(appDir, latestVersion); err != nil {
+						logger.Warn("Failed to mark update: %v", err)
+					} else {
+						logger.Info("Update prepared. Restart to apply.")
+					}
+				}
+			} else if hasUpdate {
+				logger.Info("Update available: %s (auto-update disabled)", latestVersion)
+			}
 		}
 	}
 
@@ -66,7 +130,7 @@ func runProxy(cmd *cobra.Command) error {
 		if err := logger.SetOutput(logPath); err != nil {
 			fmt.Printf("Failed to set log file: %v\n", err)
 		} else {
-			logger.Info("日志文件路径: %s", logPath)
+			logger.Info("Log file: %s", logPath)
 		}
 	}
 
@@ -79,39 +143,39 @@ func runProxy(cmd *cobra.Command) error {
 	}
 	defer certMgr.Close()
 
-	logger.Info("正在启动 Snirect...")
-	logger.Info("配置文件加载自: %s", appDir)
+	logger.Info("Starting Snirect...")
+	logger.Info("Config directory: %s", appDir)
 
 	switch cfg.CAInstall {
 	case "never":
-		logger.Info("CA 自动安装已禁用")
+		logger.Info("CA auto-install disabled")
 	case "always":
-		logger.Info("正在强制重新安装 CA 证书...")
+		logger.Info("Force re-installing root CA...")
 		installed, err := sysproxy.ForceInstallCert(caCertPath)
 		if err != nil {
 			logger.Warn("Failed to install root CA: %v", err)
-			logger.Warn("You may need to install the certificate manually: %s", caCertPath)
+			logger.Warn("You may need to install manually: %s", caCertPath)
 		} else if installed {
-			logger.Info("Root CA 重新安装成功。请重启浏览器以生效。")
+			logger.Info("Root CA reinstalled. Restart browser to apply.")
 		}
 	case "auto", "":
-		logger.Info("正在检查根 CA 是否已安装...")
+		logger.Info("Checking root CA installation...")
 		installed, err := sysproxy.InstallCert(caCertPath)
 		if err != nil {
-			logger.Warn("安装根 CA 失败: %v", err)
-			logger.Warn("你可能需要手动安装证书: %s", caCertPath)
+			logger.Warn("Failed to install root CA: %v", err)
+			logger.Warn("You may need to install manually: %s", caCertPath)
 		} else if installed {
-			logger.Info("Root CA 安装成功。请重启浏览器以生效。")
+			logger.Info("Root CA installed. Restart browser to apply.")
 		}
 	default:
-		logger.Warn("无效的 ca_install 值: %q。预期为: auto, always, 或 never。", cfg.CAInstall)
-		logger.Info("正在检查根 CA 是否已安装...")
+		logger.Warn("Invalid ca_install: %q. Expected: auto, always, never.", cfg.CAInstall)
+		logger.Info("Checking root CA...")
 		installed, err := sysproxy.InstallCert(caCertPath)
 		if err != nil {
-			logger.Warn("安装根 CA 失败: %v", err)
-			logger.Warn("你可能需要手动安装证书: %s", caCertPath)
+			logger.Warn("Failed to install root CA: %v", err)
+			logger.Warn("You may need to install manually: %s", caCertPath)
 		} else if installed {
-			logger.Info("Root CA 安装成功。请重启浏览器以生效。")
+			logger.Info("Root CA installed. Restart browser to apply.")
 		}
 	}
 
@@ -137,7 +201,6 @@ func runProxy(cmd *cobra.Command) error {
 		defer sysproxy.ClearPAC()
 	}
 
-	// Print Usage Info
 	printUsageInfo(cfg.Server.Port)
 
 	c := make(chan os.Signal, 1)
@@ -147,7 +210,7 @@ func runProxy(cmd *cobra.Command) error {
 	case err := <-serverErr:
 		return fmt.Errorf("server failed: %w", err)
 	case <-c:
-		logger.Info("正在关闭...")
+		logger.Info("Shutting down...")
 	}
 
 	return nil
