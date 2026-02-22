@@ -2,16 +2,18 @@ package cmd
 
 import (
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
 	"time"
 
-	"snirect/internal/ca"
+	"snirect/internal/cert"
 	"snirect/internal/config"
+	"snirect/internal/container"
 	"snirect/internal/logger"
-	"snirect/internal/proxy"
 	"snirect/internal/sysproxy"
 	"snirect/internal/update"
 
@@ -134,17 +136,39 @@ func runProxy(cmd *cobra.Command) error {
 		}
 	}
 
+	// Start pprof profiling server if enabled
+	if pprof {
+		go func() {
+			logger.Info("pprof server listening on %s (endpoints: /debug/pprof/, /debug/pprof/heap, /debug/pprof/goroutine, etc.)", pprofAddr)
+			if err := http.ListenAndServe(pprofAddr, nil); err != nil {
+				logger.Error("pprof server failed: %v", err)
+			}
+		}()
+	}
+
 	caCertPath := filepath.Join(certDir, "root.crt")
 	caKeyPath := filepath.Join(certDir, "root.key")
 
-	certMgr, err := ca.NewCertManager(caCertPath, caKeyPath)
+	logger.Info("Starting Snirect...")
+	logger.Info("Config directory: %s", appDir)
+
+	// Load rules first (needed for container)
+	rules, err := config.LoadRules(rulesPath)
+	if err != nil {
+		logger.Warn("Failed to load rules.toml: %v. Rules empty.", err)
+		rules = &config.Rules{}
+	}
+
+	// Create container for dependency injection
+	cnt := container.New(cfg, rules)
+
+	// Initialize certificate manager with actual paths
+	certMgr, err := cert.NewCertificateManager(caCertPath, caKeyPath)
 	if err != nil {
 		return fmt.Errorf("failed to initialize CA: %w", err)
 	}
-	defer certMgr.Close()
-
-	logger.Info("Starting Snirect...")
-	logger.Info("Config directory: %s", appDir)
+	cnt.SetCertManager(certMgr)
+	defer cnt.Close()
 
 	switch cfg.CAInstall {
 	case "never":
@@ -179,13 +203,8 @@ func runProxy(cmd *cobra.Command) error {
 		}
 	}
 
-	rules, err := config.LoadRules(rulesPath)
-	if err != nil {
-		logger.Warn("Failed to load rules.toml: %v. Rules empty.", err)
-		rules = &config.Rules{}
-	}
-
-	srv := proxy.NewProxyServer(cfg, rules, certMgr)
+	// Create proxy server via container (uses injected certMgr and resolver)
+	srv := cnt.GetProxyServer()
 
 	serverErr := make(chan error, 1)
 	go func() {

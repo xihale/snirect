@@ -1,3 +1,6 @@
+// Package upstream provides an HTTP client that routes through Snirect's internal
+// network stack. It applies DNS resolution with rule-based IP overrides, SNI modification,
+// and custom certificate verification. Used for update checks and rule synchronization.
 package upstream
 
 import (
@@ -9,10 +12,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"snirect/internal/config"
 	"snirect/internal/dns"
+	"snirect/internal/interfaces"
 	"snirect/internal/logger"
 	"snirect/internal/tlsutil"
 )
@@ -20,10 +25,41 @@ import (
 // Client is a minimal HTTP client that routes through Snirect's internal network stack,
 // applying DNS resolution, SNI rewriting, and certificate verification according to rules.
 type Client struct {
-	cfg      *config.Config
-	rules    *config.Rules
-	resolver *dns.Resolver
-	timeout  time.Duration
+	cfg         *config.Config
+	rules       *config.Rules
+	resolver    interfaces.Resolver
+	timeout     time.Duration
+	rateLimiter *simpleRateLimiter
+}
+
+type simpleRateLimiter struct {
+	interval time.Duration
+	last     time.Time
+	mu       sync.Mutex
+}
+
+func newSimpleRateLimiter(rps int) *simpleRateLimiter {
+	if rps <= 0 {
+		return nil
+	}
+	interval := time.Second / time.Duration(rps)
+	return &simpleRateLimiter{
+		interval: interval,
+		last:     time.Now(),
+	}
+}
+
+func (rl *simpleRateLimiter) Wait() {
+	if rl == nil {
+		return
+	}
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	elapsed := time.Since(rl.last)
+	if elapsed < rl.interval {
+		time.Sleep(rl.interval - elapsed)
+	}
+	rl.last = time.Now()
 }
 
 // New creates a new upstream client.
@@ -33,10 +69,27 @@ func New(cfg *config.Config, rules *config.Rules) *Client {
 		timeout = 30 * time.Second
 	}
 	return &Client{
-		cfg:      cfg,
-		rules:    rules,
-		resolver: dns.NewResolver(cfg, rules),
-		timeout:  timeout,
+		cfg:         cfg,
+		rules:       rules,
+		resolver:    dns.NewResolver(cfg, rules),
+		timeout:     timeout,
+		rateLimiter: newSimpleRateLimiter(cfg.Update.UpstreamRateLimit),
+	}
+}
+
+// NewWithResolver creates a new upstream client with a custom resolver.
+// This is used by the container for dependency injection.
+func NewWithResolver(cfg *config.Config, rules *config.Rules, resolver interfaces.Resolver) *Client {
+	timeout := time.Duration(cfg.Timeout.Dial) * time.Second
+	if timeout == 0 {
+		timeout = 30 * time.Second
+	}
+	return &Client{
+		cfg:         cfg,
+		rules:       rules,
+		resolver:    resolver,
+		timeout:     timeout,
+		rateLimiter: newSimpleRateLimiter(cfg.Update.UpstreamRateLimit),
 	}
 }
 
@@ -44,6 +97,8 @@ func New(cfg *config.Config, rules *config.Rules) *Client {
 // The request will go through DNS resolution with rule-based IP overrides, SNI modification,
 // and certificate verification according to config and rules.
 func (c *Client) Get(ctx context.Context, url string) (*http.Response, error) {
+	c.rateLimiter.Wait()
+
 	// Parse URL
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -164,44 +219,7 @@ func (c *Client) verifyCert(conn *tls.Conn, host, targetSNI string) bool {
 	if !ok {
 		policy, _ = config.ParseCertPolicy(c.cfg.CheckHostname)
 	}
-
-	// If verification is disabled, accept
-	if !policy.Enabled {
-		return true
-	}
-
-	state := conn.ConnectionState()
-	if len(state.PeerCertificates) == 0 {
-		return false
-	}
-	cert := state.PeerCertificates[0]
-
-	// Check against allowed list if specified
-	if len(policy.Allowed) > 0 {
-		for _, dStr := range policy.Allowed {
-			if tlsutil.MatchHostname(cert, dStr, policy) {
-				return true
-			}
-		}
-		logger.Debug("cert domains %v did not match allowed list %v", cert.DNSNames, policy.Allowed)
-		return false
-	}
-
-	// Standard verification against original host
-	if tlsutil.MatchHostname(cert, host, policy) {
-		return true
-	}
-
-	// If SNI was altered, also check against altered SNI
-	if targetSNI != "" && targetSNI != host {
-		if tlsutil.MatchHostname(cert, targetSNI, policy) {
-			logger.Debug("verified cert against altered SNI: %s", targetSNI)
-			return true
-		}
-	}
-
-	logger.Debug("hostname %s (SNI: %s) does not match cert domains %v", host, targetSNI, cert.DNSNames)
-	return false
+	return tlsutil.VerifyCert(conn, host, targetSNI, policy, c.cfg.Security)
 }
 
 // DownloadFile downloads a file from the given URL to the destination path.

@@ -26,6 +26,7 @@ type Config struct {
 	Server        ServerConfig     `toml:"server"`
 	Preference    PreferenceConfig `toml:"preference"`
 	Update        UpdateConfig     `toml:"update"`
+	Security      SecurityConfig   `toml:"security"`
 }
 
 type PreferenceConfig struct {
@@ -46,6 +47,14 @@ type UpdateConfig struct {
 	CheckIntervalHours      int    `toml:"check_interval_hours"`
 	RulesCheckIntervalHours int    `toml:"rules_check_interval_hours"`
 	RulesURL                string `toml:"rules_url"`
+}
+
+type SecurityConfig struct {
+	ValidateChain  bool `toml:"validate_chain"`
+	MinChainLength int  `toml:"min_chain_length"`
+	CheckEKU       bool `toml:"check_eku"`
+	CheckValidity  bool `toml:"check_validity"`
+	AllowedStrict  bool `toml:"allowed_strict"`
 }
 
 type TimeoutConfig struct {

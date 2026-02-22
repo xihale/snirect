@@ -9,9 +9,11 @@ import (
 )
 
 var (
-	cfgFile  string
-	setProxy bool
-	logLevel string
+	cfgFile   string
+	setProxy  bool
+	logLevel  string
+	pprof     bool
+	pprofAddr string
 )
 
 // RootCmd represents the base command when called without any subcommands
@@ -50,6 +52,8 @@ func init() {
 
 	RootCmd.Flags().BoolVarP(&setProxy, "set-proxy", "s", false, "Set system proxy automatically")
 	RootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "v", "", "Set log level (debug, info, warn, error)")
+	RootCmd.PersistentFlags().BoolVar(&pprof, "pprof", false, "Enable pprof profiling endpoints")
+	RootCmd.PersistentFlags().StringVar(&pprofAddr, "pprof-addr", "127.0.0.1:6060", "pprof server address (only used with --pprof)")
 }
 
 func initConfig() {

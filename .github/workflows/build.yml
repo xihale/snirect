@@ -27,6 +27,15 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.61
+          args: --timeout=5m
+
+      - name: Test
+        run: go test ./... -race -count=1 -coverprofile=coverage.out -covermode=atomic
+
       - name: Build All Platforms
         run: |
           go run github.com/magefile/mage crossAll

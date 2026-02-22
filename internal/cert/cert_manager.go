@@ -1,4 +1,4 @@
-package ca
+package cert
 
 import (
 	"crypto/ecdsa"
@@ -17,17 +17,17 @@ import (
 	"time"
 )
 
-// CertManager manages the Root CA and signs leaf certificates for proxying.
-type CertManager struct {
+// CertificateManager manages the Root CA and signs leaf certificates for proxying.
+type CertificateManager struct {
 	RootCert  *x509.Certificate
 	RootKey   interface{}
 	certCache sync.Map // map[string]*tls.Certificate
 	stopChan  chan struct{}
 }
 
-// NewCertManager creates a new CertManager, loading existing CA files or generating new ones.
-func NewCertManager(caCertPath, caKeyPath string) (*CertManager, error) {
-	cm := &CertManager{
+// NewCertificateManager creates a new CertificateManager, loading existing CA files or generating new ones.
+func NewCertificateManager(caCertPath, caKeyPath string) (*CertificateManager, error) {
+	cm := &CertificateManager{
 		stopChan: make(chan struct{}),
 	}
 
@@ -58,12 +58,13 @@ func NewCertManager(caCertPath, caKeyPath string) (*CertManager, error) {
 }
 
 // Close stops the background cleanup routine.
-func (cm *CertManager) Close() {
+func (cm *CertificateManager) Close() error {
 	close(cm.stopChan)
+	return nil
 }
 
 // LoadCA loads a CA from PEM data.
-func (cm *CertManager) LoadCA(certPEM, keyPEM []byte) error {
+func (cm *CertificateManager) LoadCA(certPEM, keyPEM []byte) error {
 	block, _ := pem.Decode(certPEM)
 	if block == nil {
 		return errors.New("failed to parse certificate PEM")
@@ -125,7 +126,7 @@ func verifyKey(cert *x509.Certificate, key interface{}) error {
 	return nil
 }
 
-func (cm *CertManager) generateCA() error {
+func (cm *CertificateManager) generateCA() error {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return err
@@ -159,7 +160,7 @@ func (cm *CertManager) generateCA() error {
 	return nil
 }
 
-func (cm *CertManager) saveCA(certPath, keyPath string) error {
+func (cm *CertificateManager) saveCA(certPath, keyPath string) error {
 	certOut, err := os.Create(certPath)
 	if err != nil {
 		return err
@@ -198,7 +199,7 @@ func (cm *CertManager) saveCA(certPath, keyPath string) error {
 }
 
 // SignLeafCert signs a new leaf certificate for the given hosts.
-func (cm *CertManager) SignLeafCert(hosts []string) ([]byte, interface{}, error) {
+func (cm *CertificateManager) SignLeafCert(hosts []string) ([]byte, interface{}, error) {
 	// Generate leaf key (ECDSA is faster)
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -231,7 +232,7 @@ func (cm *CertManager) SignLeafCert(hosts []string) ([]byte, interface{}, error)
 	return derBytes, priv, nil
 }
 
-func (cm *CertManager) cleanupRoutine() {
+func (cm *CertificateManager) cleanupRoutine() {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 

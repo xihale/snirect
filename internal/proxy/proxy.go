@@ -1,17 +1,22 @@
+// Package proxy implements the core HTTP/HTTPS proxy server with TLS interception
+// and SNI modification capabilities. It handles CONNECT tunneling, direct forwarding,
+// and certificate management for MITM decryption.
 package proxy
 
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
-	"snirect/internal/ca"
+	"snirect/internal/cert"
 	"snirect/internal/config"
 	"snirect/internal/dns"
+	"snirect/internal/interfaces"
 	"snirect/internal/logger"
 	"snirect/internal/tlsutil"
 	"strings"
@@ -23,28 +28,49 @@ import (
 type ProxyServer struct {
 	Config    *config.Config
 	Rules     *config.Rules
-	CA        *ca.CertManager
-	Resolver  *dns.Resolver
-	semaphore chan struct{} // Limits concurrent connections
+	CA        interfaces.CertificateManager
+	Resolver  interfaces.Resolver
+	semaphore chan struct{} //Limits concurrent connections
 }
 
-// NewProxyServer creates a new instance of ProxyServer.
-func NewProxyServer(cfg *config.Config, rules *config.Rules, ca *ca.CertManager) *ProxyServer {
+// NewProxyServer creates a new ProxyServer instance with default dependencies.
+// It initializes a DNS resolver from the configuration and rules, and sets up
+// the proxy for serving traffic.
+func NewProxyServer(cfg *config.Config, rules *config.Rules, ca *cert.CertificateManager) *ProxyServer {
 	var sem chan struct{}
 	if cfg.Limit.MaxConns > 0 {
 		sem = make(chan struct{}, cfg.Limit.MaxConns)
 	}
 
+	// dns.NewResolver returns *dns.Resolver which implements interfaces.Resolver
+	resolver := dns.NewResolver(cfg, rules)
 	return &ProxyServer{
 		Config:    cfg,
 		Rules:     rules,
 		CA:        ca,
-		Resolver:  dns.NewResolver(cfg, rules),
+		Resolver:  resolver,
+		semaphore: sem,
+	}
+}
+
+// NewProxyServerWithResolver creates a ProxyServer with custom dependencies for dependency injection.
+// It allows callers to provide specific implementations for certificate manager and resolver.
+func NewProxyServerWithResolver(cfg *config.Config, rules *config.Rules, ca interfaces.CertificateManager, resolver interfaces.Resolver) *ProxyServer {
+	var sem chan struct{}
+	if cfg.Limit.MaxConns > 0 {
+		sem = make(chan struct{}, cfg.Limit.MaxConns)
+	}
+	return &ProxyServer{
+		Config:    cfg,
+		Rules:     rules,
+		CA:        ca,
+		Resolver:  resolver,
 		semaphore: sem,
 	}
 }
 
 // Start runs the proxy server on the configured address and port.
+// It blocks until the server is stopped or an error occurs.
 func (s *ProxyServer) Start() error {
 	addr := fmt.Sprintf("%s:%d", s.Config.Server.Address, s.Config.Server.Port)
 
@@ -63,6 +89,8 @@ func (s *ProxyServer) Start() error {
 	return http.Serve(ln, s)
 }
 
+// ServeHTTP handles HTTP requests by routing CONNECT to the proxy handler
+// and other requests to the HTTP handler for PAC/cert/redirect.
 func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodConnect {
 		s.handleConnect(w, r)
@@ -297,44 +325,7 @@ func (s *ProxyServer) verifyServerCert(conn *tls.Conn, host, targetSNI string) b
 	if !ok {
 		policy, _ = config.ParseCertPolicy(s.Config.CheckHostname)
 	}
-
-	// Fast path for skipping
-	if !policy.Enabled {
-		return true
-	}
-
-	state := conn.ConnectionState()
-	if len(state.PeerCertificates) == 0 {
-		return false
-	}
-	cert := state.PeerCertificates[0]
-
-	// Check against specific domains if policy has Allowed list
-	if len(policy.Allowed) > 0 {
-		for _, dStr := range policy.Allowed {
-			if tlsutil.MatchHostname(cert, dStr, policy) {
-				return true
-			}
-		}
-		logger.Debug("Cert domains %v did not match allowed list %v", cert.DNSNames, policy.Allowed)
-		return false
-	}
-
-	// Standard check: verify against original host
-	if tlsutil.MatchHostname(cert, host, policy) {
-		return true
-	}
-
-	// If SNI was altered, also allow certificates matching the altered SNI
-	if targetSNI != "" && targetSNI != host {
-		if tlsutil.MatchHostname(cert, targetSNI, policy) {
-			logger.Debug("Verified cert against altered SNI: %s", targetSNI)
-			return true
-		}
-	}
-
-	logger.Debug("Hostname %s (SNI: %s) does not match cert domains %v", host, targetSNI, cert.DNSNames)
-	return false
+	return tlsutil.VerifyCert(conn, host, targetSNI, policy, s.Config.Security)
 }
 
 func (s *ProxyServer) directTunnel(ctx context.Context, clientConn net.Conn, host, port string) {
@@ -364,34 +355,77 @@ func (s *ProxyServer) directTunnel(ctx context.Context, clientConn net.Conn, hos
 }
 
 // tunnel pipes data between c1 and c2. It closes both connections when done.
+// Fixed: Added context cancellation, error propagation, and timeout to prevent resource leaks.
+// Optimized: Uses configurable buffer size for better throughput.
 func (s *ProxyServer) tunnel(c1, c2 net.Conn) {
+	// 5 minute timeout to prevent indefinite blocking
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	errCh := make(chan error, 2) // Buffered to prevent goroutine leak
+
+	// Determine buffer size with bounds checking
+	bufSize := s.Config.Server.BufferSize
+	if bufSize <= 0 {
+		bufSize = 65536 // default 64KB
+	}
+	if bufSize < 4096 {
+		bufSize = 4096 // minimum 4KB
+	}
+	if bufSize > 1048576 {
+		bufSize = 1048576 // maximum 1MB
+	}
+
 	pipe := func(dst, src net.Conn) {
 		defer wg.Done()
-		// We ignore errors here as they usually mean "connection closed"
-		io.Copy(dst, src)
-		// Close the write side of the destination if possible,
-		// otherwise, we can only rely on the final close.
-		// For standard net.Conn, Close() shuts down both sides.
-		// To properly teardown, usually closing one side's read causes the other's copy to return.
-		// We'll use a crude "close everything on finish" approach which is standard for simple proxies.
-		// A better approach requires CloseWrite support.
+
+		// Check for cancellation before starting
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		// Use a dedicated buffer for this direction
+		buf := make([]byte, bufSize)
+		_, err := io.CopyBuffer(dst, src, buf)
+		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+			// Send error without blocking
+			select {
+			case errCh <- err:
+			default:
+			}
+		}
+
+		// Attempt to close the write side of the destination connection
+		// This signals the other direction that we're done writing.
 		if cw, ok := dst.(interface{ CloseWrite() error }); ok {
 			cw.CloseWrite()
-		} else {
-			// If we can't half-close, we might have to hard close,
-			// but doing so might cut off the other direction's in-flight data.
-			// However, for HTTPS proxies, strict TCP termination isn't always perfect.
-			// Let's rely on the defer below to Close() both.
 		}
 	}
 
 	go pipe(c1, c2)
 	go pipe(c2, c1)
 
-	wg.Wait()
+	// Wait for both goroutines or first error
+	go func() {
+		wg.Wait()
+		cancel()
+	}()
+
+	// Wait for first error or cancellation
+	select {
+	case err := <-errCh:
+		if err != nil {
+			logger.Debug("tunnel error: %v", err)
+		}
+	case <-ctx.Done():
+	}
+
+	// Ensure both connections are closed
 	c1.Close()
 	c2.Close()
 }

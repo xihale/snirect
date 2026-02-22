@@ -11,6 +11,7 @@ import (
 	"snirect/internal/config"
 	"snirect/internal/logger"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/miekg/dns"
@@ -26,13 +27,16 @@ type stdUpstream interface {
 	Address() string
 }
 
-func (b *stdBackend) Exchange(m *dns.Msg) (*dns.Msg, string, error) {
-	if len(b.upstreams) == 1 {
-		reply, err := b.upstreams[0].Exchange(m)
+// exchangeParallel sends the same DNS query to multiple upstreams concurrently.
+// It returns the first successful reply, or the last error if all upstreams fail.
+// The caller provides a context for cancellation and timeout control.
+func exchangeParallel(ctx context.Context, m *dns.Msg, upstreams []stdUpstream) (*dns.Msg, string, error) {
+	if len(upstreams) == 1 {
+		reply, err := upstreams[0].Exchange(m)
 		if err != nil {
 			return nil, "", err
 		}
-		return reply, b.upstreams[0].Address(), nil
+		return reply, upstreams[0].Address(), nil
 	}
 
 	type result struct {
@@ -41,26 +45,44 @@ func (b *stdBackend) Exchange(m *dns.Msg) (*dns.Msg, string, error) {
 		err   error
 	}
 
-	resCh := make(chan result, len(b.upstreams))
-	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-	defer cancel()
+	resCh := make(chan result, len(upstreams))
+	var wg sync.WaitGroup
+	wg.Add(len(upstreams))
 
-	for _, u := range b.upstreams {
+	for _, u := range upstreams {
 		go func(u stdUpstream) {
+			defer wg.Done()
 			reply, err := u.Exchange(m)
-			resCh <- result{reply: reply, addr: u.Address(), err: err}
+			select {
+			case resCh <- result{reply: reply, addr: u.Address(), err: err}:
+			case <-ctx.Done():
+				// Context cancelled before we could send, skip this result
+			}
 		}(u)
 	}
 
+	// Helper goroutine to close channel when all senders are done
+	go func() {
+		wg.Wait()
+		close(resCh)
+	}()
+
 	var lastErr error
-	for i := 0; i < len(b.upstreams); i++ {
+	received := 0
+	for received < len(upstreams) {
 		select {
-		case res := <-resCh:
+		case res, ok := <-resCh:
+			if !ok {
+				// Channel closed, no more results expected
+				break
+			}
+			received++
 			if res.err == nil && res.reply != nil {
 				return res.reply, res.addr, nil
 			}
 			lastErr = res.err
 		case <-ctx.Done():
+			// Timeout or cancellation; return with whatever error we have
 			if lastErr != nil {
 				return nil, "", lastErr
 			}
@@ -68,7 +90,21 @@ func (b *stdBackend) Exchange(m *dns.Msg) (*dns.Msg, string, error) {
 		}
 	}
 
-	return nil, "", fmt.Errorf("all upstreams failed: %v", lastErr)
+	if lastErr != nil {
+		return nil, "", lastErr
+	}
+	return nil, "", fmt.Errorf("all upstreams failed")
+}
+
+func (b *stdBackend) Exchange(m *dns.Msg) (*dns.Msg, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+	defer cancel()
+
+	reply, addr, err := exchangeParallel(ctx, m, b.upstreams)
+	if err != nil {
+		return nil, "", err
+	}
+	return reply, addr, nil
 }
 
 func newBackend(cfg *config.Config, rules *config.Rules) dnsBackend {

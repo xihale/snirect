@@ -1,3 +1,5 @@
+// Package dns provides multi-backend DNS resolution (UDP/TCP/TLS/DoH/DoQ) with caching
+// and IP preference selection. It is used by the proxy for reliable hostname resolution.
 package dns
 
 import (
@@ -21,8 +23,9 @@ type dnsBackend interface {
 }
 
 type cacheEntry struct {
-	ip        string
-	expiresAt time.Time
+	ip           string
+	expiresAt    time.Time
+	lastAccessed time.Time // LRU: track last access time
 }
 
 type ipRecord struct {
@@ -42,6 +45,8 @@ type Resolver struct {
 	autoECSNet4  *net.IPNet
 	autoECSNet6  *net.IPNet
 	autoECSNetMu sync.RWMutex
+
+	stopChan chan struct{}
 }
 
 const defaultTTL = 24 * time.Hour
@@ -72,6 +77,7 @@ func NewResolver(cfg *config.Config, rules *config.Rules) *Resolver {
 		Rules:     rules,
 		cache:     make(map[string]cacheEntry),
 		prefCache: newPreferenceCache(cfg.Preference.CacheSize),
+		stopChan:  make(chan struct{}),
 	}
 
 	r.backend = newBackend(cfg, rules)
@@ -243,15 +249,15 @@ func (r *Resolver) resolveStandard(ctx context.Context, target string, clientIP 
 	return r.lookupType(ctx, target, dns.TypeA, clientIP)
 }
 
-// lookupAllAddresses returns all AAAA or A records from a fresh DNS query (bypassing cache).
-func (r *Resolver) lookupAllAddresses(ctx context.Context, target string, qType uint16, clientIP net.IP) ([]ipRecord, error) {
+// queryDNS performs a DNS query and returns all matching records along with the upstream address.
+func (r *Resolver) queryDNS(ctx context.Context, target string, qType uint16, clientIP net.IP) ([]ipRecord, string, error) {
 	m := r.buildMessage(target, qType, clientIP)
 	reply, addr, err := r.backend.Exchange(m)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if reply.Rcode != dns.RcodeSuccess {
-		return nil, fmt.Errorf("dns rcode %s from %s", dns.RcodeToString[reply.Rcode], addr)
+		return nil, "", fmt.Errorf("dns rcode %s from %s", dns.RcodeToString[reply.Rcode], addr)
 	}
 	var records []ipRecord
 	for _, ans := range reply.Answer {
@@ -267,9 +273,26 @@ func (r *Resolver) lookupAllAddresses(ctx context.Context, target string, qType 
 		}
 	}
 	if len(records) == 0 {
-		return nil, fmt.Errorf("no records of type %d found", qType)
+		return nil, "", fmt.Errorf("no records of type %d found", qType)
 	}
-	return records, nil
+	return records, addr, nil
+}
+
+// lookupAllAddresses returns all AAAA or A records from a fresh DNS query (bypassing cache).
+func (r *Resolver) lookupAllAddresses(ctx context.Context, target string, qType uint16, clientIP net.IP) ([]ipRecord, error) {
+	records, _, err := r.queryDNS(ctx, target, qType, clientIP)
+	return records, err
+}
+
+// lookupType returns the first A or AAAA record from a fresh DNS query.
+func (r *Resolver) lookupType(ctx context.Context, target string, qType uint16, clientIP net.IP) (string, uint32, error) {
+	records, addr, err := r.queryDNS(ctx, target, qType, clientIP)
+	if err != nil {
+		return "", 0, err
+	}
+	first := records[0]
+	logger.Debug("DNS: %s -> %s (%s, TTL: %d) via %s", target, first.ip, dns.TypeToString[qType], first.ttl, addr)
+	return first.ip, first.ttl, nil
 }
 
 // testIPLatency measures the time to establish a TCP connection to ip:port.
@@ -295,31 +318,51 @@ func (r *Resolver) resolveFastest(ctx context.Context, target string, clientIP n
 		maxIPs = 10
 	}
 
-	// Gather IPs from AAAA and A in parallel
+	// Gather IPs from AAAA and A in parallel with context cancellation
 	type lookupRes struct {
 		ips []ipRecord
 		err error
 	}
 	lookupCh := make(chan lookupRes, 2)
+	var wgLookup sync.WaitGroup
+	wgLookup.Add(2)
 
 	go func() {
+		defer wgLookup.Done()
 		ips, err := r.lookupAllAddresses(ctx, target, dns.TypeAAAA, clientIP)
-		lookupCh <- lookupRes{ips: ips, err: err}
+		select {
+		case lookupCh <- lookupRes{ips: ips, err: err}:
+		case <-ctx.Done():
+			// Cancelled, skip sending
+		}
 	}()
 	go func() {
+		defer wgLookup.Done()
 		ips, err := r.lookupAllAddresses(ctx, target, dns.TypeA, clientIP)
-		lookupCh <- lookupRes{ips: ips, err: err}
+		select {
+		case lookupCh <- lookupRes{ips: ips, err: err}:
+		case <-ctx.Done():
+			// Cancelled, skip sending
+		}
 	}()
 
 	var allIPs []ipRecord
-	for i := 0; i < 2; i++ {
-		res := <-lookupCh
-		if res.err == nil {
-			allIPs = append(allIPs, res.ips...)
-		} else {
-			logger.Debug("DNS: %s lookup error during fastest: %v", target, res.err)
+	received := 0
+	for received < 2 {
+		select {
+		case res := <-lookupCh:
+			received++
+			if res.err == nil {
+				allIPs = append(allIPs, res.ips...)
+			} else {
+				logger.Debug("DNS: %s lookup error during fastest: %v", target, res.err)
+			}
+		case <-ctx.Done():
+			wgLookup.Wait() // Ensure all lookup goroutines exit before returning
+			return "", ctx.Err()
 		}
 	}
+	wgLookup.Wait() // Final wait for any remaining lookup goroutines
 
 	if len(allIPs) == 0 {
 		logger.Warn("DNS: Fastest mode: no IPs for %s, falling back to standard", target)
@@ -377,24 +420,6 @@ func (r *Resolver) resolveFastest(ctx context.Context, target string, clientIP n
 	logger.Info("DNS: Fastest selected %s (latency: %v) from %d IPs", bestIP, bestLatency, len(allIPs))
 	r.setPreference(target, bestIP, bestTTL)
 	return bestIP, nil
-}
-
-func (r *Resolver) lookupType(ctx context.Context, target string, qType uint16, clientIP net.IP) (string, uint32, error) {
-	m := r.buildMessage(target, qType, clientIP)
-
-	reply, addr, err := r.backend.Exchange(m)
-	if err != nil {
-		return "", 0, err
-	}
-	if reply.Rcode != dns.RcodeSuccess {
-		return "", 0, fmt.Errorf("dns rcode %s from %s", dns.RcodeToString[reply.Rcode], addr)
-	}
-
-	ip, ttl, err := r.parseReply(reply, qType)
-	if err == nil {
-		logger.Debug("DNS: %s -> %s (%s, TTL: %d) via %s", target, ip, dns.TypeToString[qType], ttl, addr)
-	}
-	return ip, ttl, err
 }
 
 func (r *Resolver) buildMessage(target string, qType uint16, clientIP net.IP) *dns.Msg {
@@ -480,31 +505,31 @@ func (r *Resolver) getECS(qType uint16, clientIP net.IP) *dns.EDNS0_SUBNET {
 	return e
 }
 
-func (r *Resolver) parseReply(reply *dns.Msg, qType uint16) (string, uint32, error) {
-	for _, ans := range reply.Answer {
-		if qType == dns.TypeAAAA {
-			if aaaa, ok := ans.(*dns.AAAA); ok {
-				return aaaa.AAAA.String(), aaaa.Hdr.Ttl, nil
-			}
-		} else {
-			if a, ok := ans.(*dns.A); ok {
-				return a.A.String(), a.Hdr.Ttl, nil
-			}
-		}
-	}
-	return "", 0, fmt.Errorf("no records of type %d found", qType)
-}
-
 func (r *Resolver) cacheKey(host string, qType uint16) string {
 	return fmt.Sprintf("%s:%d", host, qType)
 }
 
 func (r *Resolver) getCache(host string, qType uint16) (string, bool) {
+	key := r.cacheKey(host, qType)
 	r.cacheMu.RLock()
-	defer r.cacheMu.RUnlock()
-	if entry, ok := r.cache[r.cacheKey(host, qType)]; ok && time.Now().Before(entry.expiresAt) {
+	entry, ok := r.cache[key]
+	if ok && time.Now().Before(entry.expiresAt) {
+		// Need to update lastAccessed, upgrade to write lock
+		r.cacheMu.RUnlock()
+		r.cacheMu.Lock()
+		// Double-check entry still exists and not expired (another goroutine may have modified)
+		if e, stillExists := r.cache[key]; stillExists && time.Now().Before(e.expiresAt) {
+			r.cache[key] = cacheEntry{
+				ip:           e.ip,
+				expiresAt:    e.expiresAt,
+				lastAccessed: time.Now(),
+			}
+		}
+		r.cacheMu.Unlock()
+		// Return the IP regardless of double-check outcome (original entry was valid)
 		return entry.ip, true
 	}
+	r.cacheMu.RUnlock()
 	return "", false
 }
 
@@ -524,31 +549,49 @@ func (r *Resolver) setCache(host, ip string, qType uint16, ttl uint32) {
 		limit = 10000
 	}
 
+	// LRU eviction: if cache is full, remove the least recently used entry
 	if len(r.cache) >= limit {
-		// Simple random eviction to make space
-		for k := range r.cache {
-			delete(r.cache, k)
-			break
+		var oldestKey string
+		var oldestTime time.Time
+		first := true
+		for k, v := range r.cache {
+			if first || v.lastAccessed.Before(oldestTime) {
+				oldestKey = k
+				oldestTime = v.lastAccessed
+				first = false
+			}
+		}
+		if oldestKey != "" {
+			delete(r.cache, oldestKey)
 		}
 	}
 
+	now := time.Now()
 	r.cache[r.cacheKey(host, qType)] = cacheEntry{
-		ip:        ip,
-		expiresAt: time.Now().Add(time.Duration(ttl) * time.Second),
+		ip:           ip,
+		expiresAt:    now.Add(time.Duration(ttl) * time.Second),
+		lastAccessed: now,
 	}
 }
 
 func (r *Resolver) cleanCacheRoutine() {
 	ticker := time.NewTicker(10 * time.Minute)
-	for range ticker.C {
-		r.cacheMu.Lock()
-		now := time.Now()
-		for k, v := range r.cache {
-			if now.After(v.expiresAt) {
-				delete(r.cache, k)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.stopChan:
+			return
+		case <-ticker.C:
+			r.cacheMu.Lock()
+			now := time.Now()
+			for k, v := range r.cache {
+				if now.After(v.expiresAt) {
+					delete(r.cache, k)
+				}
 			}
+			r.cacheMu.Unlock()
+			logger.Debug("DNS: Cache cleanup completed, entries remaining: %d", len(r.cache))
 		}
-		r.cacheMu.Unlock()
 	}
 }
 
@@ -563,6 +606,12 @@ func (r *Resolver) Invalidate(host string) {
 	r.invalidatePreference(host)
 
 	logger.Debug("DNS: Cache invalidated for %s", host)
+}
+
+// Close gracefully shuts down the resolver, stopping background routines.
+func (r *Resolver) Close() error {
+	close(r.stopChan)
+	return nil
 }
 
 // getPreference returns the cached preferred IP for the host, if available and not expired.

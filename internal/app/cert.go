@@ -3,7 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
-	"snirect/internal/ca"
+	"snirect/internal/cert"
 	"snirect/internal/config"
 	"snirect/internal/logger"
 	"snirect/internal/sysproxy"
@@ -26,7 +26,7 @@ func SetupCA(installToSystem bool) error {
 	caKeyPath := filepath.Join(certDir, "root.key")
 
 	// Generate CA if it doesn't exist
-	if _, err := ca.NewCertManager(caCertPath, caKeyPath); err != nil {
+	if _, err := cert.NewCertificateManager(caCertPath, caKeyPath); err != nil {
 		return err
 	}
 

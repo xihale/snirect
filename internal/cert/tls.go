@@ -1,11 +1,11 @@
-package ca
+package cert
 
 import (
 	"crypto/tls"
 	"encoding/pem"
 )
 
-func (cm *CertManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+func (cm *CertificateManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	host := hello.ServerName
 	if host == "" {
 		// If SNI is missing, fallback to a generic name to avoid "no certificates configured" error.
@@ -32,6 +32,6 @@ func (cm *CertManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certific
 	return cert, nil
 }
 
-func (cm *CertManager) GetRootCACertPEM() []byte {
+func (cm *CertificateManager) GetRootCACertPEM() []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cm.RootCert.Raw})
 }

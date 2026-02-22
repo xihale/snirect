@@ -1,0 +1,23 @@
+# pre-commit hooks for Snirect
+# https://pre-commit.com/
+
+repos:
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v1.61
+    hooks:
+      - id: golangci-lint
+        name: golangci-lint
+        description: Fast Go linter aggregator
+        args: [--timeout=5m]
+        pass_filenames: false
+        always_run: true
+
+  - repo: local
+    hooks:
+      - id: go-test
+        name: go test
+        description: Run Go tests with race detector
+        entry: go test ./... -race -count=1
+        language: system
+        pass_filenames: false
+        always_run: true

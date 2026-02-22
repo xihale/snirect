@@ -270,3 +270,14 @@ func Upx() error {
 	}
 	return nil
 }
+
+// Lint runs golangci-lint on the codebase
+func Lint() error {
+	fmt.Println("Running golangci-lint...")
+	// Ensure golangci-lint is installed (v1.61+)
+	if err := sh.Run("golangci-lint", "run", "--timeout=5m"); err != nil {
+		return fmt.Errorf("linting failed: %w", err)
+	}
+	fmt.Println("Linting passed")
+	return nil
+}

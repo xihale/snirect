@@ -29,3 +29,6 @@ Thumbs.db
 internal/config/defaults_generated.go
 internal/cmd/completions/
 
+# Test coverage
+coverage.out
+

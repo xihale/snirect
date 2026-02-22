@@ -31,6 +31,7 @@ logfile = ""
 address = "127.0.0.1"
 port = 7654
 pac_host = "127.0.0.1"
+buffer_size = 65536  # Tunnel copy buffer size in bytes (64KB default)
 
  [preference]
  # Mode: standard, fastest, ipv6, ipv4
@@ -105,3 +106,17 @@ pac_host = "127.0.0.1"
 
   # Upstream URL for fetching rules (supports TOML or JSON array format).
   rules_url = "https://github.com/SpaceTimee/Cealing-Host/releases/latest/download/Cealing-Host.toml"
+
+[security]
+# Zero-trust certificate verification hardening.
+# These are additional checks beyond hostname matching.
+#   validate_chain   - Verify full certificate chain (default false, recommend true)
+#   min_chain_length - Minimum chain length including root (2=root+leaf, 3=root+intermediate+leaf)
+#   check_eku        - Verify certificate has serverAuth EKU (default true)
+#   check_validity   - Verify NotBefore/NotAfter (default true)
+#   allowed_strict   - Disallow wildcards in allowed lists (default false)
+validate_chain = false
+min_chain_length = 2
+check_eku = true
+check_validity = true
+allowed_strict = false

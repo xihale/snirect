@@ -46,4 +46,9 @@ var PreparsedDefaultConfig = Config{
 		RulesCheckIntervalHours: 24,
 		RulesURL:                "https://github.com/SpaceTimee/Cealing-Host/releases/latest/download/Cealing-Host.toml",
 	},
+	Security: SecurityConfig{
+		MinChainLength: 2,
+		CheckEKU:       true,
+		CheckValidity:  true,
+	},
 }

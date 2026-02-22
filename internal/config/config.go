@@ -1,3 +1,6 @@
+// Package config defines configuration structures and provides loading, validation, and default
+// management for Snirect. It supports TOML configuration, layered rules (user, fetched, default),
+// and generates embedded default values.
 package config
 
 import (
@@ -86,6 +89,23 @@ type Config struct {
 
 	// Update contains auto-update and auto-check settings.
 	Update UpdateConfig `toml:"update"`
+
+	// Security contains certificate verification hardening settings.
+	Security SecurityConfig `toml:"security"`
+}
+
+// SecurityConfig controls zero-trust certificate verification.
+type SecurityConfig struct {
+	// ValidateChain enables full certificate chain validation (default false for compatibility).
+	ValidateChain bool `toml:"validate_chain"`
+	// MinChainLength minimum expected chain length including root (2 = self-signed, 3 = intermediate).
+	MinChainLength int `toml:"min_chain_length"`
+	// CheckEKU verifies certificate Extended Key Usage contains serverAuth (default true).
+	CheckEKU bool `toml:"check_eku"`
+	// CheckValidity verifies certificate time validity (always recommended, default true).
+	CheckValidity bool `toml:"check_validity"`
+	// AllowedStrict disables wildcards in allowed lists when true (default false).
+	AllowedStrict bool `toml:"allowed_strict"`
 }
 
 // UpdateConfig controls automatic update and rules fetching behavior.
@@ -104,6 +124,8 @@ type UpdateConfig struct {
 	RulesCheckIntervalHours int `toml:"rules_check_interval_hours"`
 	// RulesURL specifies the upstream URL for fetching rules (TOML or JSON format).
 	RulesURL string `toml:"rules_url"`
+	// UpstreamRateLimit sets the maximum number of upstream requests per second (0 = unlimited).
+	UpstreamRateLimit int `toml:"upstream_rate_limit"`
 }
 
 // IPPreferenceMode defines how IP selection works when both IPv6 and IPv4 are available.
@@ -159,9 +181,10 @@ type LogConfig struct {
 
 // ServerConfig contains proxy server settings.
 type ServerConfig struct {
-	Address string `toml:"address"`  // Bind address (e.g., "127.0.0.1")
-	Port    int    `toml:"port"`     // Listen port
-	PACHost string `toml:"pac_host"` // Hostname for PAC file generation
+	Address    string `toml:"address"`     // Bind address (e.g., "127.0.0.1")
+	Port       int    `toml:"port"`        // Listen port
+	PACHost    string `toml:"pac_host"`    // Hostname for PAC file generation
+	BufferSize int    `toml:"buffer_size"` // Tunnel copy buffer size in bytes (default 65536, min 4096, max 1048576)
 }
 
 // GetDefaultLogPath returns the platform-specific default log file path.

@@ -15,9 +15,9 @@ snirect/
 ├── cmd/snirect/          CLI entry point
 ├── internal/
 │   ├── app/              Install/uninstall and service management
-│   ├── ca/               Certificate authority
+│   ├── cert/             Certificate authority
 │   ├── cmd/              All CLI commands (cobra)
-│   ├── config/           Configuration loading, merging, defaults generation
+│   ├── config/           Configuration loading, defaults generation, rule matching
 │   ├── dns/              DNS resolution (UDP/TCP/TLS/DoH/DoQ)
 │   ├── logger/           Structured logging wrapper (log/slog)
 │   ├── proxy/            HTTP/HTTPS MITM proxy server
@@ -41,10 +41,10 @@ snirect/
 | DNS resolution | internal/dns/ | resolver_base.go (core), backends (std/quic) |
 | System proxy | internal/sysproxy/ | Platform-specific settings, Firefox cert |
 | Installation | internal/app/ | install.go, platform-specific un/installers |
-| Configuration | internal/config/ | loader.go (merge), match.go (rules), defaults generation |
+| Configuration | internal/config/ | loader.go (applies defaults), match.go (rules), defaults generation |
 | Logging | internal/logger/logger.go | wrapper around log/slog |
 | Updates | internal/update/manager.go | rules sync, self-update |
-| Certificate CA | internal/ca/ | CA creation, certificate generation |
+| Certificate Management | internal/cert/ | CA creation, certificate generation |
 | TLS verification | internal/tlsutil/verify.go | hostname verification (strict/loose) |
 | Upstream HTTP | internal/upstream/client.go | connection reuse, manual TLS verify |
 
@@ -55,7 +55,7 @@ snirect/
 | ProxyServer | struct | internal/proxy/proxy.go | Main proxy server, Start() loop |
 | Config | struct | internal/config/config.go | Global configuration |
 | Rules | struct | internal/config/rules.go (shared) | Rule set for host/SNI mapping |
-| CertManager | struct | internal/ca/ca.go | Manages root CA and certificates |
+| CertificateManager | struct | internal/cert/cert_manager.go | Manages root CA and certificates |
 | Resolver | struct | internal/dns/resolver_base.go | DNS resolver with caching/preference |
 | NewResolver | func | internal/dns/resolver_base.go | Constructor for Resolver |
 | Install/Uninstall | func | internal/app/*.go | Platform-specific install/uninstall |
@@ -81,8 +81,8 @@ snirect/
 - **Platform-specific**: `_<os>.go` files (darwin, linux, windows)
 - **Generated code**: `*_generated.go` marked "DO NOT EDIT"
 - **Go version**: 1.25.5
-- **No linting** configured (golangci-lint, staticcheck absent)
-- **No CI test** step (tests exist but not run in GitHub Actions)
+- **Linting**: golangci-lint configured in `.golangci.yml`; run in CI and via pre-commit hooks.
+- **CI**: GitHub Actions runs `go test ./... -race -count=1 -cover` and `golangci-lint run` on pushes/PRs. Tests also run in pre-commit.
 
 ### Configuration
 - Three-tier rule system: user > fetched > default
@@ -129,7 +129,7 @@ go run github.com/magefile/mage upx        # Compress binaries (requires upx-ucl
 
 - **Security**: Manual TLS verification bypasses standard hostname checks. InsecureSkipVerify + incomplete verification = MITM risk. Do not use for highly sensitive sites.
 - **Gemini Issue**: Gemini returns fallback certificate when SNI is modified.
-- **No Tests in CI**: Consider adding `go test ./...` to build workflow.
+
 - **Codegen**: After changing config types, run `go generate ./internal/config`.
 - **QUIC**: Build with `mage full` for DoQ/H3.
 - **Rule Precedence**: user rules > fetched rules > defaults; `__AUTO__` reverts to default for specific entries.
