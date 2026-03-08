@@ -260,6 +260,12 @@ Snirect 使用三层规则系统，优先级从高到低为：**用户规则 > F
 
 ---
 
+## 教程与最佳实践
+
+- [Clash 与 dae 配合实现 SNI 专属 HTTP 代理分流](docs/clash-dae-sni-proxy.md)
+
+---
+
 ## 故障排除
 
 | 问题                 | 解决方法                                                               |
