@@ -1,4 +1,4 @@
-package certpolicy
+package rules
 
 import "fmt"
 

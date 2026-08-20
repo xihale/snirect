@@ -35,3 +35,6 @@ jobs:
 
       - name: Build Cross CLI
         run: make crossAll
+
+      - name: Compile-check mobile bindings (android/arm64)
+        run: GOOS=android GOARCH=arm64 go build ./mobile/...

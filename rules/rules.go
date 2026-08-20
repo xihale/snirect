@@ -4,8 +4,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-
-	"github.com/xihale/snirect/certpolicy"
 )
 
 // MatchHost reports whether host matches a rule key.
@@ -171,28 +169,28 @@ func (r *Rules) GetHost(host string) (string, bool) {
 }
 
 // GetCertVerify returns the certificate verification policy for a host, or false if no rule matches.
-func (r *Rules) GetCertVerify(host string) (certpolicy.CertPolicy, bool) {
+func (r *Rules) GetCertVerify(host string) (CertPolicy, bool) {
 	if r == nil {
-		return certpolicy.CertPolicy{}, false
+		return CertPolicy{}, false
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	// Exact match first
 	if val, ok := r.CertVerify[host]; ok {
-		p, _ := certpolicy.ParseCertPolicy(val)
+		p, _ := ParseCertPolicy(val)
 		return p, true
 	}
 
 	// Pattern matching
 	for _, k := range r.certVerifyKeys {
 		if MatchHost(k, host) {
-			p, _ := certpolicy.ParseCertPolicy(r.CertVerify[k])
+			p, _ := ParseCertPolicy(r.CertVerify[k])
 			return p, true
 		}
 	}
 
-	return certpolicy.CertPolicy{}, false
+	return CertPolicy{}, false
 }
 
 // GetIgnoreExpiry returns whether certificate expiry should be ignored for a host.

@@ -2,7 +2,7 @@
 # Multi-platform Go CLI & Android Application
 
 # --- Version & Metadata ---
-VERSION ?= $(shell bash git_version.sh 2>/dev/null || echo "0.0.0-dev")
+VERSION ?= $(shell bash scripts/git_version.sh 2>/dev/null || echo "0.0.0-dev")
 MODULE := github.com/xihale/snirect
 LDFLAGS := -s -w -X '$(MODULE)/cmd.Version=$(VERSION)'
 

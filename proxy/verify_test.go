@@ -1,4 +1,4 @@
-package tlsutil
+package proxy
 
 import (
 	"crypto/ecdsa"
@@ -7,12 +7,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"github.com/xihale/snirect/certpolicy"
-	"github.com/xihale/snirect/config"
 	"math/big"
 	"net"
 	"testing"
 	"time"
+
+	"github.com/xihale/snirect/config"
+	"github.com/xihale/snirect/rules"
 )
 
 func TestMatchHostname(t *testing.T) {
@@ -22,15 +23,15 @@ func TestMatchHostname(t *testing.T) {
 	tests := []struct {
 		name     string
 		hostname string
-		policy   certpolicy.CertPolicy
+		policy   rules.CertPolicy
 		want     bool
 	}{
-		{name: "Strict - Match", hostname: "example.com", policy: certpolicy.CertPolicy{Enabled: true, Strict: true}, want: true},
-		{name: "Strict - Wildcard Match", hostname: "foo.example.org", policy: certpolicy.CertPolicy{Enabled: true, Strict: true}, want: true},
-		{name: "Strict - No Match", hostname: "other.com", policy: certpolicy.CertPolicy{Enabled: true, Strict: true}, want: false},
-		{name: "Loose - Match exact", hostname: "example.com", policy: certpolicy.CertPolicy{Enabled: true, Strict: false}, want: true},
-		{name: "Loose - Match sub", hostname: "sub.example.com", policy: certpolicy.CertPolicy{Enabled: true, Strict: false}, want: true},
-		{name: "Loose - No Match", hostname: "google.com", policy: certpolicy.CertPolicy{Enabled: true, Strict: false}, want: false},
+		{name: "Strict - Match", hostname: "example.com", policy: rules.CertPolicy{Enabled: true, Strict: true}, want: true},
+		{name: "Strict - Wildcard Match", hostname: "foo.example.org", policy: rules.CertPolicy{Enabled: true, Strict: true}, want: true},
+		{name: "Strict - No Match", hostname: "other.com", policy: rules.CertPolicy{Enabled: true, Strict: true}, want: false},
+		{name: "Loose - Match exact", hostname: "example.com", policy: rules.CertPolicy{Enabled: true, Strict: false}, want: true},
+		{name: "Loose - Match sub", hostname: "sub.example.com", policy: rules.CertPolicy{Enabled: true, Strict: false}, want: true},
+		{name: "Loose - No Match", hostname: "google.com", policy: rules.CertPolicy{Enabled: true, Strict: false}, want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -154,7 +155,7 @@ func TestHasServerAuthEKU(t *testing.T) {
 func TestVerifyCert_TimeValidity(t *testing.T) {
 	now := time.Now()
 	sec := config.SecurityConfig{ValidateChain: false, CheckEKU: false, CheckValidity: true}
-	policy := certpolicy.CertPolicy{Enabled: true}
+	policy := rules.CertPolicy{Enabled: true}
 	validCert, _, err := generateTestCert(true, false, now.Add(24*time.Hour))
 	if err != nil {
 		t.Fatalf("gen validCert: %v", err)
@@ -176,7 +177,7 @@ func TestVerifyCert_TimeValidity(t *testing.T) {
 func TestVerifyCert_EKU(t *testing.T) {
 	now := time.Now()
 	sec := config.SecurityConfig{ValidateChain: false, CheckEKU: true, CheckValidity: true}
-	policy := certpolicy.CertPolicy{Enabled: true}
+	policy := rules.CertPolicy{Enabled: true}
 	withEKU, _, err := generateTestCert(true, false, now.Add(24*time.Hour))
 	if err != nil {
 		t.Fatalf("gen withEKU: %v", err)
@@ -198,8 +199,8 @@ func TestVerifyCert_EKU(t *testing.T) {
 func TestVerifyCert_AllowedStrict(t *testing.T) {
 	now := time.Now()
 	baseSec := config.SecurityConfig{ValidateChain: false, CheckEKU: false, CheckValidity: true}
-	policyWildcard := certpolicy.CertPolicy{Enabled: true, Allowed: []string{"*.example.com"}}
-	policyExact := certpolicy.CertPolicy{Enabled: true, Allowed: []string{"test.example.com"}}
+	policyWildcard := rules.CertPolicy{Enabled: true, Allowed: []string{"*.example.com"}}
+	policyExact := rules.CertPolicy{Enabled: true, Allowed: []string{"test.example.com"}}
 	cert := generateTestCertHelper(now, "test.example.com")
 	conn := &mockConn{state: buildConnState(cert)}
 	if !VerifyCert(conn, "test.example.com", "", policyWildcard, baseSec, false) {
@@ -256,7 +257,7 @@ func TestVerifyCertificateChain(t *testing.T) {
 
 func TestVerifyCert_DisabledPolicySkipsAll(t *testing.T) {
 	now := time.Now()
-	policy := certpolicy.CertPolicy{Enabled: false}
+	policy := rules.CertPolicy{Enabled: false}
 
 	// Disabled policy should skip all verification
 	sec := config.SecurityConfig{ValidateChain: true, CheckEKU: true, CheckValidity: true}

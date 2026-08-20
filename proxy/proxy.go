@@ -8,11 +8,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/xihale/snirect/config"
-	"github.com/xihale/snirect/interfaces"
-	"github.com/xihale/snirect/logger"
-	"github.com/xihale/snirect/rules"
-	"github.com/xihale/snirect/tlsutil"
 	"io"
 	"net"
 	"net/http"
@@ -21,14 +16,32 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/xihale/snirect/config"
+	"github.com/xihale/snirect/logger"
+	"github.com/xihale/snirect/rules"
 )
+
+// CertificateManager manages root CA and signs leaf certificates.
+type CertificateManager interface {
+	GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error)
+	GetRootCACertPEM() []byte
+	Close() error
+}
+
+// Resolver resolves hostnames to IP addresses with caching.
+type Resolver interface {
+	Resolve(ctx context.Context, host string, clientIP net.IP) (string, error)
+	Invalidate(host string)
+	Close() error
+}
 
 // ProxyServer handles HTTP and HTTPS proxying.
 type ProxyServer struct {
 	Config    *config.Config
 	Rules     *rules.Rules
-	CA        interfaces.CertificateManager
-	Resolver  interfaces.Resolver
+	CA        CertificateManager
+	Resolver  Resolver
 	semaphore chan struct{} //Limits concurrent connections
 	server    *http.Server
 	listener  net.Listener
@@ -42,7 +55,7 @@ type ProxyServer struct {
 }
 
 // NewProxyServer creates a new ProxyServer instance.
-func NewProxyServer(cfg *config.Config, rules *rules.Rules, ca interfaces.CertificateManager, resolver interfaces.Resolver) *ProxyServer {
+func NewProxyServer(cfg *config.Config, rules *rules.Rules, ca CertificateManager, resolver Resolver) *ProxyServer {
 	var sem chan struct{}
 	if cfg.Limit.MaxConns > 0 {
 		sem = make(chan struct{}, cfg.Limit.MaxConns)
@@ -429,7 +442,7 @@ func (s *ProxyServer) verifyServerCert(conn *tls.Conn, hostname, targetSNI strin
 		policy = s.Config.CheckHostnamePolicy()
 	}
 	ignoreExpiry := s.Rules.GetIgnoreExpiry(hostname)
-	return tlsutil.VerifyCert(conn, hostname, targetSNI, policy, s.Config.Security, ignoreExpiry)
+	return VerifyCert(conn, hostname, targetSNI, policy, s.Config.Security, ignoreExpiry)
 }
 
 func (s *ProxyServer) directTunnel(ctx context.Context, clientConn net.Conn, host, port string) {

@@ -16,6 +16,7 @@ import (
 	"github.com/xihale/snirect/dns"
 	"github.com/xihale/snirect/logger"
 	"github.com/xihale/snirect/proxy"
+	"github.com/xihale/snirect/rules"
 	"github.com/xihale/snirect/sysproxy"
 
 	"github.com/spf13/cobra"
@@ -83,7 +84,7 @@ func BootstrapProxy(cmd *cobra.Command) (*ProxyEnv, error) {
 	setupLogging(cfg, cmd)
 	startPprof()
 
-	r, err := config.LoadRules()
+	r, err := rules.LoadRules()
 	if err != nil {
 		logger.Control().Warn("failed to load rules", "error", err)
 	}

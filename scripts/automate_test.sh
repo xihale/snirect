@@ -2,6 +2,7 @@
 # Developer smoke test: rebuild core & debug APK, install, curl a few URLs.
 # Needs adb and a connected device/emulator.
 set -e
+cd "$(dirname "$0")/.."
 
 echo "Building core and Debug APK..."
 make debug

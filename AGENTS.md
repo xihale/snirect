@@ -11,10 +11,14 @@
 | 目录/文件 | 角色与定位 | 构建方式 |
 | :--- | :--- | :--- |
 | **`cmd/snirect/`** | 桌面端 CLI 命令行入口 (`snirect`)。 | `make build` / `go build` |
-| **`app/`**, **`cert/`**, **`proxy/`**, **`dns/`**, **`rules/`**, **`sysproxy/`** | 通用 Go 核心引擎逻辑（证书、代理、DNS、规则与系统代理集成）。 | 原生 Go |
+| **`proxy/`** | HTTP/HTTPS 代理服务器、TLS 拦截与上游证书验证（含 `CertificateManager`/`Resolver` 接口与 `VerifyCert`）。 | 原生 Go |
+| **`app/`**, **`cert/`**, **`dns/`**, **`rules/`**, **`sysproxy/`** | 通用 Go 核心引擎逻辑（证书、DNS、规则与系统代理集成）。证书策略类型 (`CertPolicy`/`ParseCertPolicy`) 定义于 `rules/certpolicy.go`。 | 原生 Go |
 | **`config/`** | 配置定义与加载器。默认配置与 PAC 模板直接以 Go 原生字符串编写于 `config/defaults.go`，无需外部 `.toml` 资源文件。 | 原生 Go |
+| **`color/`** | logger 与 CLI 共享的 ANSI 颜色/样式转义序列（含 `NO_COLOR` 检测）。 | 原生 Go |
+| **`logger/`** | 结构化日志 (`slog`) 分模块 logger。 | 原生 Go |
 | **`mobile/`** | Android gomobile 绑定层 (`package core`)，生成 `core.aar`。 | `make core` (`gomobile bind`) |
 | **`android/`** | Android App 宿主工程 (`app` 模块)。直接依赖本地 `core.aar`，Kotlin 桥接代码位于 `com.xihale.snirect.ktlib`。 | `make app` / Gradle |
+| **`scripts/`** | 开发辅助脚本（`git_version.sh` 版本号生成、`automate_test.sh` 冒烟测试）。 | `bash` |
 | **`Makefile`** | 根目录统一构建入口，替代以往的 Mage 系统。 | `make <target>` |
 
 ---

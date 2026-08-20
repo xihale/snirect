@@ -2,8 +2,6 @@ package rules
 
 import (
 	"testing"
-
-	"github.com/xihale/snirect/certpolicy"
 )
 
 func TestNewRules(t *testing.T) {
@@ -34,7 +32,7 @@ func TestParseCertPolicy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p, err := certpolicy.ParseCertPolicy(tt.input)
+			p, err := ParseCertPolicy(tt.input)
 			ok := err == nil
 			if ok != tt.wantOK {
 				t.Fatalf("ParseCertPolicy() ok=%v want=%v", ok, tt.wantOK)

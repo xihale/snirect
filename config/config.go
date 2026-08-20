@@ -3,7 +3,7 @@
 package config
 
 import (
-	"github.com/xihale/snirect/certpolicy"
+	"github.com/xihale/snirect/rules"
 )
 
 // Config represents the main configuration for Snirect.
@@ -118,7 +118,7 @@ type ServerConfig struct {
 
 // CheckHostnamePolicy returns the parsed certificate verification policy from CheckHostname.
 // This provides type-safe access instead of passing the raw interface{} to callers.
-func (c *Config) CheckHostnamePolicy() certpolicy.CertPolicy {
-	p, _ := certpolicy.ParseCertPolicy(c.CheckHostname)
+func (c *Config) CheckHostnamePolicy() rules.CertPolicy {
+	p, _ := rules.ParseCertPolicy(c.CheckHostname)
 	return p
 }

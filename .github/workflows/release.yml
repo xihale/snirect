@@ -26,6 +26,9 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
+      - name: Test
+        run: make test
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -78,7 +81,7 @@ jobs:
           make app BUILD_TYPE=Release
           apk="$(find android/app/build/outputs/apk/release -name '*.apk' | head -n1)"
           if [ -n "$apk" ]; then
-            dest="dist/Snirect-${GITHUB_REF_NAME}.apk"
+            dest="dist/snirect-android-arm64-${GITHUB_REF_NAME}.apk"
             cp "$apk" "$dest"
           fi
 

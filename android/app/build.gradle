@@ -22,7 +22,7 @@ def getGitVersionName(project) {
     try {
         return project.providers.exec {
             workingDir project.rootProject.projectDir.parentFile
-            commandLine 'bash', 'git_version.sh'
+            commandLine 'bash', 'scripts/git_version.sh'
         }.standardOutput.asText.get().trim()
     } catch (Exception e) {
         return "0.0.0-fallback"

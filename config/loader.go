@@ -7,16 +7,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/xihale/snirect/logger"
-	ruleslib "github.com/xihale/snirect/rules"
 )
-
-func LoadRules() (*ruleslib.Rules, error) {
-	r, err := ruleslib.LoadRules()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load built-in rules: %w", err)
-	}
-	return r, nil
-}
 
 // LoadConfig loads configuration from a file.
 func LoadConfig(path string) (*Config, error) {

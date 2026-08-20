@@ -10,10 +10,10 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/xihale/snirect/app"
+	"github.com/xihale/snirect/color"
 	"github.com/xihale/snirect/config"
 	"github.com/xihale/snirect/rules"
 	"github.com/xihale/snirect/sysproxy"
-	"github.com/xihale/snirect/term/color"
 
 	"github.com/spf13/cobra"
 )
@@ -212,7 +212,7 @@ func printConfigAndRules() {
 		return
 	}
 
-	r, err := config.LoadRules()
+	r, err := rules.LoadRules()
 	if err != nil {
 		fmt.Printf("rules load error: %v\n", err)
 		return

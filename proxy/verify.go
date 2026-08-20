@@ -1,4 +1,4 @@
-package tlsutil
+package proxy
 
 import (
 	"crypto/tls"
@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xihale/snirect/certpolicy"
 	"github.com/xihale/snirect/config"
 	"github.com/xihale/snirect/logger"
 	"github.com/xihale/snirect/rules"
@@ -21,7 +20,7 @@ type TLSConnection interface {
 }
 
 // MatchHostname verifies that the certificate matches the given hostname.
-func MatchHostname(cert *x509.Certificate, hostname string, policy certpolicy.CertPolicy) bool {
+func MatchHostname(cert *x509.Certificate, hostname string, policy rules.CertPolicy) bool {
 	if strings.ContainsAny(hostname, "*?$") {
 		for _, dnsName := range cert.DNSNames {
 			if rules.MatchHost(hostname, dnsName) {
@@ -81,7 +80,7 @@ func looselyMatch(cert *x509.Certificate, hostname string) bool {
 // VerifyCert verifies a TLS connection's certificate against the given host, policy, and security config.
 // This is the shared verification logic used by both proxy and upstream client.
 // ignoreExpiry skips certificate time validity checks when true.
-func VerifyCert(conn TLSConnection, host, targetSNI string, policy certpolicy.CertPolicy, sec config.SecurityConfig, ignoreExpiry bool) bool {
+func VerifyCert(conn TLSConnection, host, targetSNI string, policy rules.CertPolicy, sec config.SecurityConfig, ignoreExpiry bool) bool {
 	state := conn.ConnectionState()
 	if len(state.PeerCertificates) == 0 {
 		logger.Upstream().Warn("upstream sent no certificates", "host", host)

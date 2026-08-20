@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xihale/snirect/term/color"
+	"github.com/xihale/snirect/color"
 )
 
 var (
