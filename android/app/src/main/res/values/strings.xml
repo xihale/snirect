@@ -1,0 +1,182 @@
+<resources>
+    <string name="app_name">Snirect</string>
+    <string name="app_logo">SNIRECT</string>
+
+    <!-- VPN Status -->
+    <string name="vpn_status_starting">Connecting...</string>
+    <string name="vpn_status_stopping">Stopping...</string>
+    <string name="vpn_status_running">Running</string>
+
+    <!-- Main Screen -->
+    <string name="action_connect">Connect</string>
+    <string name="action_disconnect">Disconnect</string>
+    <string name="action_activate">ACTIVATE</string>
+    <string name="action_deactivate">DEACTIVATE</string>
+    <string name="https_decryption">HTTPS Decryption</string>
+    <string name="https_decryption_desc">Install CA Certificate to enable SNI modification for HTTPS</string>
+    <string name="ca_certificate">CA Certificate</string>
+    <string name="action_required">Action Required</string>
+    <string name="action_fix_now">Fix Now</string>
+    <string name="cert_installed_trusted">Installed &amp; Trusted</string>
+    <string name="cert_checking">Checking...</string>
+    <string name="bytes_sent">Bytes Sent</string>
+    <string name="bytes_received">Bytes Received</string>
+    <string name="version_format">Snirect %1$s</string>
+
+    <!-- Certificate Prompt -->
+    <string name="cert_required_title">Certificate Required</string>
+    <string name="cert_required_msg">CA Certificate is not installed or trusted. HTTPS decryption will not work. Would you like to view the installation guide?</string>
+    <string name="action_view_guide">View Guide</string>
+    <string name="action_later">Later</string>
+
+    <!-- Toasts -->
+    <string name="toast_cert_install_required">Please install CA certificate first!</string>
+    <string name="toast_saved_to_downloads">Saved to Downloads/snirect_ca.crt</string>
+    <string name="toast_export_failed">Export failed: %1$s</string>
+    <string name="toast_auto_start_blocked">Auto-start blocked: Please install CA certificate</string>
+    <string name="toast_boot_auto_start_blocked">Boot auto-start blocked: Please install CA certificate</string>
+    <string name="toast_vpn_permission_denied">VPN permission is required to activate</string>
+    <string name="toast_error">Error: %1$s</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="group_general">General</string>
+    <string name="group_network">Network</string>
+    <string name="group_security_startup">Security &amp; Startup</string>
+    <string name="group_high_risk">High Risk</string>
+    <string name="group_dns_configuration">DNS Configuration</string>
+    <string name="setting_mtu">MTU Size</string>
+    <string name="setting_mtu_desc">Current: %1$s</string>
+    <string name="setting_check_hostname">Check Hostname</string>
+    <string name="setting_check_hostname_desc">Verify SSL certificates</string>
+    <string name="setting_check_hostname_warning">Currently disabled (High risk)</string>
+    <string name="setting_ipv6">IPv6 Support</string>
+    <string name="setting_ipv6_desc">Enable IPv6 routing</string>
+    <string name="setting_ipv6_control">IPv6 Control</string>
+    <string name="ipv6_only_v4">Only IPv4</string>
+    <string name="ipv6_exclude_v6">Exclude IPv6</string>
+    <string name="ipv6_full_v6">Full IPv6</string>
+    <string name="group_automation_security">Automation &amp; Security</string>
+    <string name="setting_language">Language</string>
+    <string name="setting_dark_theme">Dark Theme</string>
+    <string name="lang_en">English</string>
+    <string name="lang_zh">简体中文</string>
+    <string name="setting_active_startup">Run on Startup</string>
+    <string name="setting_active_startup_desc">Start app when device boots</string>
+    <string name="setting_active_boot">Boot on Start</string>
+    <string name="setting_active_boot_desc">Connect automatically</string>
+    <string name="setting_skip_cert_check">Skip Certificate Check</string>
+    <string name="setting_skip_cert_check_desc">Do not check if CA cert is installed before starting</string>
+    <string name="setting_skip_cert_check_warning">Vulnerable to MITM attacks</string>
+    <string name="group_dns">DNS</string>
+    <string name="setting_dns_config">DNS Configuration</string>
+    <string name="setting_dns_config_desc">DoH and Bootstrap DNS</string>
+    <string name="setting_upstream_servers">Upstream Servers</string>
+    <string name="setting_whitelist">App Whitelist</string>
+    <string name="setting_whitelist_desc">Only selected apps use VPN</string>
+    <string name="setting_whitelist_apps">Selected Apps</string>
+    <string name="setting_whitelist_apps_count">%1$d apps selected</string>
+    <string name="setting_filter_mode">App Filtering Mode</string>
+    <!-- Short labels for the inline segmented pickers in Settings -->
+    <string name="option_lang_system">System</string>
+    <string name="option_filter_none">Global</string>
+    <string name="option_filter_whitelist">Allow</string>
+    <string name="option_filter_blacklist">Block</string>
+
+    <!-- High-Risk Settings screen -->
+    <string name="risk_settings_title">High-Risk Settings</string>
+    <string name="risk_settings_desc">Skip certificate &amp; hostname checks</string>
+    <string name="setting_bypass_lan">Bypass LAN</string>
+    <string name="setting_bypass_lan_desc">Exclude local network traffic</string>
+    <string name="dialog_select_apps">Select Apps</string>
+    <string name="action_auto_select_browsers">Auto-select Browsers</string>
+    <string name="group_logging_debug">Logging &amp; Debug</string>
+    <string name="group_advanced">Advanced</string>
+    <string name="setting_log_level">Log Level</string>
+    <string name="setting_log_level_desc">Current: %1$s</string>
+
+    <!-- Security Warning Dialog -->
+    <string name="security_warning_title">Security Warning</string>
+    <string name="security_warning_msg">Disabling hostname verification makes the connection vulnerable to MITM attacks.</string>
+    <string name="action_disable_anyway">Disable Anyway</string>
+    <string name="action_cancel">Cancel</string>
+
+    <!-- Setup Guide / Help Screen -->
+    <string name="help_title">Help &amp; Support</string>
+    <string name="step_export">Export</string>
+    <string name="step_install">Install</string>
+    <string name="step_verify">Verify</string>
+    <string name="setup_step_1_title">1. Export Certificate</string>
+    <string name="setup_step_1_desc">To securely connect to the Snirect network, you first need to download your personalized security certificate to your device.</string>
+    <string name="action_export_downloads">Export to Downloads</string>
+    <string name="exporting">Exporting...</string>
+    <string name="certificate_exported">Certificate Exported</string>
+    <string name="setup_step_2_title">2. Install in System Settings</string>
+    <string name="setup_step_2_desc">1. Go to System Settings -> Security -> Encryption &amp; credentials.\n2. Tap \'Install a certificate\' -> \'CA certificate\'.\n3. Tap \'Install anyway\' on the warning.\n4. Select the downloaded \'snirect_ca.crt\' file.</string>
+    <string name="action_open_security_settings">Open System Settings</string>
+    <string name="setup_step_3_title">3. Verify &amp; Start Service</string>
+    <string name="setup_step_3_desc">Verify that the certificate is recognized by the system and start your secure connection.</string>
+    <string name="action_verify_cert">Verify Status</string>
+    <string name="cert_verified_success">CA Certificate is verified and ready!</string>
+    <string name="cert_not_verified">Certificate not found in User credentials yet. Please complete step 2.</string>
+    <string name="next_step">Next</string>
+    <string name="prev_step">Previous</string>
+
+    <string name="help_section_1_title">Why Install CA Certificate?</string>
+    <string name="help_section_1_content">To support HTTPS decryption and SNI modification, Snirect needs a Root CA certificate installed in your system. This allows the app to handle encrypted traffic for domains like Pixiv.</string>
+    <string name="help_section_2_title">How to Install (Android 11+)</string>
+    <string name="help_section_2_content">1. Click \'HTTPS Decryption\' on the home screen to export \'snirect_ca.crt\' to your Downloads folder.\n2. Go to System Settings -> Security -> Encryption &amp; credentials.\n3. Select \'Install a certificate\' -> \'CA certificate\'.\n4. Tap \'Install anyway\' on the warning.\n5. Pick the exported certificate file.</string>
+    <string name="help_section_3_title">Starting the Service</string>
+    <string name="help_section_3_content">Click \'Connect\' on the main screen. Grant VPN permission if prompted. Once active, your traffic will be routed through the Snirect core for SNI modification.</string>
+    <string name="help_section_4_title">DNS</string>
+    <string name="help_section_4_content">You can configure custom DNS servers (DoH) in Settings. SNI rewrite behavior is built into the app and ships with each release for consistent behavior across devices.</string>
+    <string name="help_note">Note: If you encounter certificate errors in apps, ensure the CA certificate is correctly installed in the \'User\' trust store.</string>
+
+    <!-- Logs Screen -->
+    <string name="logs_title">Technical Logs</string>
+    <string name="action_share_logs">Share Logs</string>
+    <string name="action_clear_logs">Clear Logs</string>
+    <string name="search_logs_placeholder">Search logs...</string>
+    <string name="search_apps_placeholder">Search apps...</string>
+    <string name="share_logs_chooser">Share Logs</string>
+    <string name="tab_all">All</string>
+    <string name="no_logs_found">No logs to display</string>
+    <string name="no_apps_found">No apps found</string>
+    <string name="filter_browsers">Browsers</string>
+    <string name="filter_selected_apps">Selected</string>
+    <string name="app_list_no_permission_title">Can\'t read the app list</string>
+    <string name="app_list_no_permission_hint">The app is missing the package visibility permission — reinstall it to grant access</string>
+
+    <!-- Select Apps Screen -->
+    <string name="selected_count_format">%1$d Selected</string>
+    <string name="show_system_apps">Show system apps</string>
+    <string name="action_sort">Sort</string>
+    <string name="sort_alphabetical">Alphabetical</string>
+    <string name="sort_selected_first">Selected First</string>
+
+    <!-- DNS Screen -->
+    <string name="dns_title">DNS Resolver</string>
+    <string name="action_save">Save</string>
+    <string name="action_add_server">Add Server</string>
+    <string name="group_bootstrap">Bootstrap</string>
+    <string name="label_bootstrap_dns">Bootstrap DNS</string>
+    <string name="placeholder_bootstrap_dns">tls://223.5.5.5</string>
+    <string name="group_upstream">Upstream Nameservers (DoH/DoT)</string>
+    <string name="no_custom_nameservers">No custom nameservers</string>
+    <string name="action_remove">Remove</string>
+    <string name="dialog_add_upstream">Add Upstream</string>
+    <string name="dialog_edit_upstream">Edit Upstream</string>
+    <string name="bootstrap_hint">IP-literal only (e.g. tls://223.5.5.5). Resolves DoH/DoT hostnames. Separate entries with commas.</string>
+    <string name="action_test_server">Test connectivity</string>
+    <string name="dns_test_running">Testing…</string>
+    <string name="dns_test_ok">Reachable · %1$d ms</string>
+    <string name="dns_test_failed">Failed: %1$s</string>
+    <string name="label_endpoint_url">Endpoint URL</string>
+    <string name="placeholder_endpoint_url">https://dns.google/dns-query</string>
+    <string name="action_add">Add</string>
+    <string name="action_back">Back</string>
+    <string name="action_delete">Delete</string>
+    <string name="label_bytes">Bytes</string>
+    <string name="filter_system_apps">System</string>
+    <string name="label_system_short">SYS</string>
+</resources>

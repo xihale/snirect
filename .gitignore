@@ -1,0 +1,42 @@
+# Binaries & build directories
+dist/
+dist/*
+*.exe
+*.dll
+*.so
+*.dylib
+*.aar
+*.apk
+*.idsig
+
+# Log files
+*.log
+log.txt
+
+# Test coverage
+*.out
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# Android & Gradle
+android/.gradle/
+android/build/
+android/*/build/
+android/local.properties
+android/keystore.properties
+android/release.jks
+android/*.jks
+android/app/libs/
+android/app/release/
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

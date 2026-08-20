@@ -1,0 +1,143 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.plugin.compose'
+    id 'org.jetbrains.kotlin.plugin.serialization'
+}
+
+// 动态从 Git 获取版本号 (使用 commit 总数)
+def getGitVersionCode(project) {
+    try {
+        def count = project.providers.exec {
+            workingDir project.rootProject.projectDir.parentFile
+            commandLine 'git', 'rev-list', '--count', 'HEAD'
+        }.standardOutput.asText.get().trim()
+        return count.toInteger()
+    } catch (Exception e) {
+        return 1
+    }
+}
+
+// 动态从 Git Tag 获取版本名
+def getGitVersionName(project) {
+    try {
+        return project.providers.exec {
+            workingDir project.rootProject.projectDir.parentFile
+            commandLine 'bash', 'git_version.sh'
+        }.standardOutput.asText.get().trim()
+    } catch (Exception e) {
+        return "0.0.0-fallback"
+    }
+}
+
+android {
+    namespace 'com.xihale.snirect'
+    compileSdk 36
+
+    // 签名配置: 从 android/keystore.properties 读取 (gitignored)。
+    // 本地自己放一份; CI 从 GitHub Secrets 写入同一文件。缺失时 release 不签名。
+    def keystoreProperties = new Properties()
+    def keystorePropsFile = rootProject.file('keystore.properties')
+    if (keystorePropsFile.exists()) {
+        keystoreProperties.load(new FileInputStream(keystorePropsFile))
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePropsFile.exists()) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
+    defaultConfig {
+        applicationId "com.xihale.snirect"
+        minSdk 26
+        targetSdk 36
+        versionCode getGitVersionCode(project)
+        
+        versionName getGitVersionName(project)
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables {
+            useSupportLibrary true
+        }
+
+        resConfigs "zh", "en"
+
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            ndk {
+                debugSymbolLevel = 'none'
+            }
+            // keystore.properties 存在时签名, 否则保持默认 (未签名)。
+            signingConfig keystorePropsFile.exists() ? signingConfigs.release : null
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            // 在 debug 模式保持默认配置以方便调试，不建议开启混淆
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+            minifyEnabled false
+            shrinkResources false
+            ndk {
+                // debug 附带 x86_64 供模拟器调试；全 ABI 的 libgojni 在 core.aar 内已就绪。
+                // 只打 arm64 的话模拟器上 Core 类初始化即 UnsatisfiedLinkError（静默全瘫）。
+                abiFilters 'arm64-v8a', 'x86_64'
+            }
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildFeatures {
+        compose true
+        buildConfig true
+    }
+    packaging {
+        jniLibs {
+            // libgojni.so (~11MB) stored uncompressed doubles the APK; compress
+            // it instead (~5.5MB download, extracted to /data on install).
+            useLegacyPackaging true
+        }
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+            // Duplicate androidx LICENSE.txt copies (~80KB).
+            excludes += '/META-INF/*.txt'
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.17.0'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.10.0'
+    implementation 'androidx.activity:activity-compose:1.12.2'
+    
+    implementation platform('androidx.compose:compose-bom:2026.01.00')
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-graphics'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-core'
+    implementation 'androidx.compose.material:material-icons-extended'
+    
+    implementation 'androidx.navigation:navigation-compose:2.9.7'
+    implementation 'androidx.datastore:datastore-preferences:1.2.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0'
+    implementation fileTree(dir: 'libs', include: ['*.aar', '*.jar'])
+
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.3.0'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.7.0'
+}

@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: |
+          sdkmanager --install "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Install UPX & gomobile
+        run: |
+          sudo apt-get update && sudo apt-get install -y upx-ucl
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          gomobile init
+
+      - name: Build CLI binaries
+        run: make release-cli
+
+      - name: Import release signing key
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          export KEYSTORE="$GITHUB_WORKSPACE/android/release.jks"
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          keystore = Path(os.environ["KEYSTORE"])
+          keystore.write_bytes(base64.b64decode(os.environ["ANDROID_KEYSTORE_BASE64"]))
+          props = keystore.parent / "keystore.properties"
+          props.write_text(
+              f"storeFile={keystore}\n"
+              f"storePassword={os.environ['ANDROID_KEYSTORE_PASSWORD']}\n"
+              f"keyAlias={os.environ['ANDROID_KEY_ALIAS']}\n"
+              f"keyPassword={os.environ['ANDROID_KEY_PASSWORD']}\n"
+          )
+          PY
+
+      - name: Build Android Release APK
+        run: |
+          make core ARCH=android/arm64
+          make app BUILD_TYPE=Release
+          apk="$(find android/app/build/outputs/apk/release -name '*.apk' | head -n1)"
+          if [ -n "$apk" ]; then
+            dest="dist/Snirect-${GITHUB_REF_NAME}.apk"
+            cp "$apk" "$dest"
+          fi
+
+      - name: Generate Checksums
+        run: make checksum
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') || contains(github.ref, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

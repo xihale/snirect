@@ -1,0 +1,182 @@
+<resources>
+    <string name="app_name">Snirect</string>
+    <string name="app_logo">SNIRECT</string>
+
+    <!-- VPN Status -->
+    <string name="vpn_status_starting">连接中...</string>
+    <string name="vpn_status_stopping">停止中...</string>
+    <string name="vpn_status_running">正在运行</string>
+
+    <!-- Main Screen -->
+    <string name="action_connect">连接</string>
+    <string name="action_disconnect">断开</string>
+    <string name="action_activate">激活</string>
+    <string name="action_deactivate">断开</string>
+    <string name="https_decryption">HTTPS 解密</string>
+    <string name="https_decryption_desc">安装 CA 证书以开启 HTTPS 的 SNI 修改</string>
+    <string name="ca_certificate">CA 根证书</string>
+    <string name="action_required">需要处理</string>
+    <string name="action_fix_now">立即处理</string>
+    <string name="cert_installed_trusted">已安装并受信任</string>
+    <string name="cert_checking">检测中...</string>
+    <string name="bytes_sent">发送字节</string>
+    <string name="bytes_received">接收字节</string>
+    <string name="version_format">Snirect %1$s</string>
+
+    <!-- Certificate Prompt -->
+    <string name="cert_required_title">需要安装证书</string>
+    <string name="cert_required_msg">CA 根证书未安装或未信任。HTTPS 解密将无法正常工作。是否查看安装向导？</string>
+    <string name="action_view_guide">查看向导</string>
+    <string name="action_later">稍后</string>
+
+    <!-- Toasts -->
+    <string name="toast_cert_install_required">请先安装 CA 证书！</string>
+    <string name="toast_saved_to_downloads">已保存至 Downloads/snirect_ca.crt</string>
+    <string name="toast_export_failed">导出失败: %1$s</string>
+    <string name="toast_auto_start_blocked">自动启动已拦截：请先安装 CA 证书</string>
+    <string name="toast_boot_auto_start_blocked">开机自启已拦截：请先安装 CA 证书</string>
+    <string name="toast_vpn_permission_denied">需要 VPN 权限才能激活</string>
+    <string name="toast_error">错误: %1$s</string>
+
+    <!-- Settings -->
+    <string name="settings_title">设置</string>
+    <string name="group_general">通用</string>
+    <string name="group_network">网络</string>
+    <string name="group_security_startup">安全与启动</string>
+    <string name="group_high_risk">高危设置</string>
+    <string name="group_dns_configuration">DNS 配置</string>
+    <string name="setting_mtu">MTU 大小</string>
+    <string name="setting_mtu_desc">当前: %1$s</string>
+    <string name="setting_check_hostname">检查主机名</string>
+    <string name="setting_check_hostname_desc">验证 SSL 证书合法性</string>
+    <string name="setting_check_hostname_warning">当前已关闭 (存在高危安全风险)</string>
+    <string name="setting_ipv6">IPv6 支持</string>
+    <string name="setting_ipv6_desc">开启 IPv6 路由</string>
+    <string name="setting_ipv6_control">IPv6 控制</string>
+    <string name="ipv6_only_v4">仅 IPv4</string>
+    <string name="ipv6_exclude_v6">排除 IPv6</string>
+    <string name="ipv6_full_v6">完整 IPv6</string>
+    <string name="group_automation_security">自动化与安全</string>
+    <string name="setting_language">语言</string>
+    <string name="setting_dark_theme">深色模式</string>
+    <string name="lang_en">English</string>
+    <string name="lang_zh">简体中文</string>
+    <string name="setting_active_startup">启动应用时激活</string>
+    <string name="setting_active_startup_desc">打开应用时自动启动 VPN</string>
+    <string name="setting_active_boot">开机自启</string>
+    <string name="setting_active_boot_desc">设备启动时自动激活 VPN</string>
+    <string name="setting_skip_cert_check">跳过证书检查</string>
+    <string name="setting_skip_cert_check_desc">启动时不检查是否已安装 CA 证书</string>
+    <string name="setting_skip_cert_check_warning">容易受到中间人 (MITM) 攻击</string>
+    <string name="group_dns">DNS</string>
+    <string name="setting_dns_config">DNS 配置</string>
+    <string name="setting_dns_config_desc">DoH 与 Bootstrap DNS</string>
+    <string name="setting_upstream_servers">上游服务器</string>
+    <string name="setting_whitelist">应用白名单</string>
+    <string name="setting_whitelist_desc">仅选中的应用使用 VPN</string>
+    <string name="setting_whitelist_apps">已选应用</string>
+    <string name="setting_whitelist_apps_count">已选中 %1$d 个应用</string>
+    <string name="setting_filter_mode">应用过滤模式</string>
+    <!-- Short labels for the inline segmented pickers in Settings -->
+    <string name="option_lang_system">跟随系统</string>
+    <string name="option_filter_none">全局</string>
+    <string name="option_filter_whitelist">白名单</string>
+    <string name="option_filter_blacklist">黑名单</string>
+
+    <!-- High-Risk Settings screen -->
+    <string name="risk_settings_title">高危设置</string>
+    <string name="risk_settings_desc">跳过证书与主机名检查</string>
+    <string name="setting_bypass_lan">绕过局域网</string>
+    <string name="setting_bypass_lan_desc">不代理本地网络流量 (如 NAS/打印机)</string>
+    <string name="dialog_select_apps">选择应用</string>
+    <string name="action_auto_select_browsers">自动选择浏览器</string>
+    <string name="group_logging_debug">日志与调试</string>
+    <string name="group_advanced">高级设置</string>
+    <string name="setting_log_level">日志级别</string>
+    <string name="setting_log_level_desc">当前: %1$s</string>
+
+    <!-- Security Warning Dialog -->
+    <string name="security_warning_title">安全警告</string>
+    <string name="security_warning_msg">禁用主机名验证会使连接容易受到中间人 (MITM) 攻击。</string>
+    <string name="action_disable_anyway">仍然禁用</string>
+    <string name="action_cancel">取消</string>
+
+    <!-- Setup Guide / Help Screen -->
+    <string name="help_title">帮助与向导</string>
+    <string name="step_export">导出</string>
+    <string name="step_install">安装</string>
+    <string name="step_verify">验证</string>
+    <string name="setup_step_1_title">1. 导出根证书</string>
+    <string name="setup_step_1_desc">为了安全地连接到 Snirect 网络，请首先将专属安全证书导出至您的设备中。</string>
+    <string name="action_export_downloads">导出至下载文件夹</string>
+    <string name="exporting">正在导出...</string>
+    <string name="certificate_exported">证书已导出</string>
+    <string name="setup_step_2_title">2. 在系统设置中安装证书</string>
+    <string name="setup_step_2_desc">1. 进入系统设置 -> 安全 -> 加密与凭据。\n2. 点击“安装证书” -> 选择“CA 证书”。\n3. 在警告提示中选择“仍然安装”。\n4. 选择刚导出的“snirect_ca.crt”文件完成安装。</string>
+    <string name="action_open_security_settings">打开系统安全设置</string>
+    <string name="setup_step_3_title">3. 验证状态并启动服务</string>
+    <string name="setup_step_3_desc">验证系统是否已识别并信任此证书，并开启安全连接。</string>
+    <string name="action_verify_cert">验证证书状态</string>
+    <string name="cert_verified_success">CA 证书验证成功，准备就绪！</string>
+    <string name="cert_not_verified">尚未在用户凭据中检测到证书，请确认已完成第 2 步。</string>
+    <string name="next_step">下一步</string>
+    <string name="prev_step">上一步</string>
+
+    <string name="help_section_1_title">为什么要安装 CA 证书？</string>
+    <string name="help_section_1_content">为了支持 HTTPS 解密和 SNI 修改，Snirect 需要在系统中安装根证书。这允许应用处理 Pixiv 等域名的加密流量。</string>
+    <string name="help_section_2_title">如何安装 (Android 11+)</string>
+    <string name="help_section_2_content">1. 点击主界面下方的“HTTPS 解密”卡片，将“snirect_ca.crt”导出至下载文件夹。\n2. 进入系统设置 -> 安全 -> 加密与凭据。\n3. 选择“安装证书” -> “CA 证书”。\n4. 在警告弹窗点击“仍然安装”。\n5. 选择刚才导出的证书文件。</string>
+    <string name="help_section_3_title">启动服务</string>
+    <string name="help_section_3_content">在主界面点击“连接”。如果弹出 VPN 权限请求，请授权。激活后，您的流量将通过 Snirect 核心进行 SNI 修改。</string>
+    <string name="help_section_4_title">DNS</string>
+    <string name="help_section_4_content">您可以在设置中配置自定义 DNS 服务器 (DoH)。SNI 改写行为已经内置在应用中，并随每个版本一起发布，以确保各设备行为一致。</string>
+    <string name="help_note">注意：如果应用中出现证书错误，请确保 CA 证书已正确安装在“用户”信任存储中。</string>
+
+    <!-- Logs Screen -->
+    <string name="logs_title">技术日志</string>
+    <string name="action_share_logs">分享日志</string>
+    <string name="action_clear_logs">清空日志</string>
+    <string name="search_logs_placeholder">搜索日志...</string>
+    <string name="search_apps_placeholder">搜索应用...</string>
+    <string name="share_logs_chooser">分享日志</string>
+    <string name="tab_all">全部</string>
+    <string name="no_logs_found">暂无日志可显示</string>
+    <string name="no_apps_found">未找到匹配的应用</string>
+    <string name="filter_browsers">浏览器</string>
+    <string name="filter_selected_apps">已选</string>
+    <string name="app_list_no_permission_title">无法读取应用列表</string>
+    <string name="app_list_no_permission_hint">缺少「查询所有应用」权限，请重新安装应用以授予</string>
+
+    <!-- Select Apps Screen -->
+    <string name="selected_count_format">已选择 %1$d 个</string>
+    <string name="show_system_apps">显示系统应用</string>
+    <string name="action_sort">排序</string>
+    <string name="sort_alphabetical">按名称字母</string>
+    <string name="sort_selected_first">已选排前</string>
+
+    <!-- DNS Screen -->
+    <string name="dns_title">DNS 解析器</string>
+    <string name="action_save">保存</string>
+    <string name="action_add_server">添加服务器</string>
+    <string name="group_bootstrap">引导 DNS (Bootstrap)</string>
+    <string name="label_bootstrap_dns">引导 DNS</string>
+    <string name="placeholder_bootstrap_dns">tls://223.5.5.5</string>
+    <string name="group_upstream">上游服务器 (DoH/DoT)</string>
+    <string name="no_custom_nameservers">暂无自定义上游服务器</string>
+    <string name="action_remove">删除</string>
+    <string name="dialog_add_upstream">添加上游服务器</string>
+    <string name="dialog_edit_upstream">编辑上游服务器</string>
+    <string name="bootstrap_hint">必须是 IP 字面量（如 tls://223.5.5.5），用于解析 DoH/DoT 域名。多个用逗号分隔。</string>
+    <string name="action_test_server">测试连通性</string>
+    <string name="dns_test_running">测试中…</string>
+    <string name="dns_test_ok">可达 · %1$d ms</string>
+    <string name="dns_test_failed">失败: %1$s</string>
+    <string name="label_endpoint_url">服务器地址 (URL)</string>
+    <string name="placeholder_endpoint_url">https://dns.google/dns-query</string>
+    <string name="action_add">添加</string>
+    <string name="action_back">返回</string>
+    <string name="action_delete">删除</string>
+    <string name="label_bytes">字节</string>
+    <string name="filter_system_apps">系统</string>
+    <string name="label_system_short">系统</string>
+</resources>
