@@ -37,6 +37,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavController
 import com.xihale.snirect.R
 import com.xihale.snirect.data.repository.ConfigRepository
@@ -90,6 +93,22 @@ fun AppWhitelistScreen(
                 context, Manifest.permission.QUERY_ALL_PACKAGES
             ) == PackageManager.PERMISSION_GRANTED
         )
+    }
+
+    // Re-check on every ON_RESUME: some ROMs expose QUERY_ALL_PACKAGES as a
+    // toggle in system settings. Without this the screen would keep showing
+    // the no-permission state after the user grants it there, until they
+    // manually left and re-entered this screen.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event != Lifecycle.Event.ON_RESUME) return@LifecycleEventObserver
+            canQueryPackages = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.QUERY_ALL_PACKAGES
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(canQueryPackages) {
