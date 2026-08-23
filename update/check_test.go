@@ -49,6 +49,9 @@ func TestAssetName(t *testing.T) {
 		{"windows", "amd64", "v1.5.0", "snirect-windows-amd64.exe"},
 		{"windows", "arm64", "v1.0.0", "snirect-windows-arm64.exe"},
 		{"android", "arm64", "v1.5.0", "snirect-android-arm64-v1.5.0.apk"},
+		{"android", "amd64", "v1.5.0", "snirect-android-x86_64-v1.5.0.apk"},
+		{"android", "386", "v1.5.0", "snirect-android-x86-v1.5.0.apk"},
+		{"android", "wasm", "v1.5.0", ""},
 	}
 	for _, tc := range cases {
 		got := AssetName(tc.goos, tc.goarch, tc.tag)

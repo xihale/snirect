@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"runtime"
 	"time"
 
 	"github.com/xihale/snirect/update"
@@ -22,7 +23,9 @@ type UpdateInfo struct {
 func CheckUpdate(current string) (*UpdateInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	info, err := update.Check(ctx, current, "android", "arm64")
+	// runtime.GOARCH 是当前 APK 实际跑的 ABI (arm64 版→arm64, x86_64 版→amd64),
+	// 这样模拟器上的 x86_64 包不会误下 arm64 APK。
+	info, err := update.Check(ctx, current, "android", runtime.GOARCH)
 	if err != nil {
 		return nil, err
 	}

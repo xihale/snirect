@@ -51,7 +51,7 @@ help:
 	@echo ""
 	@echo "Android 指令:"
 	@echo "  make core            - 编译 Go runtime AAR (当前 ARCH=$(ARCH))"
-	@echo "  make app             - 编译 Android APK (当前 BUILD_TYPE=$(BUILD_TYPE))"
+	@echo "  make app             - 编译 Android APK (当前 BUILD_TYPE=$(BUILD_TYPE), 可选 ABI=x86_64 覆盖默认 arm64)"
 	@echo "  make debug           - 一键编译 Debug 版 (全 ABI core.aar + Debug APK)"
 	@echo "  make release         - 一键编译 Release 版 (arm64 core.aar + Release APK)"
 	@echo "  make install         - 安装 APK 到连接的 Android 设备"
@@ -134,8 +134,8 @@ core:
 	@ls -lh $(CORE_AAR)
 
 app:
-	@echo ">>> 正在构建 Android 应用 [$(BUILD_TYPE)]..."
-	@cd $(ANDROID_DIR) && $(GRADLE) assemble$(BUILD_TYPE)
+	@echo ">>> 正在构建 Android 应用 [$(BUILD_TYPE)]$(if $(ABI), ABI=$(ABI),)..."
+	@cd $(ANDROID_DIR) && $(GRADLE) assemble$(BUILD_TYPE) $(if $(ABI),-Pabi=$(ABI))
 	@echo ">>> APK 路径:"
 	@find $(ANDROID_DIR)/app/build/outputs/apk -name "*.apk" 2>/dev/null | xargs ls -lh 2>/dev/null || true
 

@@ -29,6 +29,10 @@ def getGitVersionName(project) {
     }
 }
 
+// ABI 过滤: 默认 arm64; CI/本地可用 -Pabi=x86_64 覆盖 (产模拟器用的 x86_64 release 包)。
+// debug 在 buildTypes 里自带多 ABI, 不受此参数影响。
+def appAbi = project.hasProperty('abi') ? project.property('abi') : 'arm64-v8a'
+
 android {
     namespace 'com.xihale.snirect'
     compileSdk 36
@@ -68,7 +72,7 @@ android {
         resConfigs "zh", "en"
 
         ndk {
-            abiFilters 'arm64-v8a'
+            abiFilters appAbi
         }
     }
 

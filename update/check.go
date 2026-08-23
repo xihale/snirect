@@ -102,11 +102,23 @@ func Check(ctx context.Context, current, goos, goarch string) (*Info, error) {
 	return New().Check(ctx, current, goos, goarch)
 }
 
+// androidABI maps a Go arch to the Android ABI segment of release asset
+// names (release.yml builds arm64 and x86_64 APKs).
+var androidABI = map[string]string{
+	"arm64": "arm64",
+	"amd64": "x86_64",
+	"386":   "x86",
+}
+
 // AssetName is the release filename for a GOOS/GOARCH pair, matching
-// Makefile crossAll / release.yml.
+// Makefile crossAll / release.yml. Unknown Android arches get "" — Check
+// then reports Newer without a downloadable asset.
 func AssetName(goos, goarch, tag string) string {
 	if goos == "android" {
-		return "snirect-android-arm64-" + tag + ".apk"
+		if abi := androidABI[goarch]; abi != "" {
+			return "snirect-android-" + abi + "-" + tag + ".apk"
+		}
+		return ""
 	}
 	ext := ""
 	if goos == "windows" {
