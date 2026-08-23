@@ -5,9 +5,14 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"time"
 
 	"github.com/xihale/snirect/logger"
 )
+
+// renewBefore is how long before NotAfter a cached leaf is re-minted, to
+// cover clock skew when proxying for a device whose clock differs from ours.
+const renewBefore = 5 * time.Minute
 
 func (cm *CertificateManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	host := hello.ServerName
@@ -17,8 +22,16 @@ func (cm *CertificateManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.C
 		host = "snirect.local"
 	}
 
-	if cert, ok := cm.certCache.Load(host); ok {
-		return cert.(*tls.Certificate), nil
+	if cached, ok := cm.certCache.Load(host); ok {
+		cert := cached.(*tls.Certificate)
+		// The hourly cleanup ticker is monotonic-clock driven and does not
+		// advance across system suspend, so an expired leaf can outlive it.
+		// Re-check on every hit instead of serving a stale certificate.
+		// A nil Leaf cannot happen via Store below; treat it as expired.
+		if cert.Leaf != nil && time.Now().Before(cert.Leaf.NotAfter.Add(-renewBefore)) {
+			return cert, nil
+		}
+		cm.certCache.Delete(host)
 	}
 
 	// Generate
@@ -43,6 +56,7 @@ func (cm *CertificateManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.C
 	cert := &tls.Certificate{
 		Certificate: [][]byte{derBytes, cm.RootCert.Raw},
 		PrivateKey:  priv,
+		Leaf:        leafCert,
 	}
 
 	cm.certCache.Store(host, cert)

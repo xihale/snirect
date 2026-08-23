@@ -214,6 +214,59 @@ func TestGetCertificate(t *testing.T) {
 	}
 }
 
+// TestGetCertificate_ExpiredCacheEntry tests that a cached leaf past its
+// NotAfter is re-minted instead of served to the client. The hourly cleanup
+// ticker cannot be relied upon: it is monotonic-clock driven and does not
+// advance while the system sleeps or the process is suspended.
+func TestGetCertificate_ExpiredCacheEntry(t *testing.T) {
+	tmpDir := t.TempDir()
+	caCertPath := tmpDir + "/root.crt"
+	caKeyPath := tmpDir + "/root.key"
+	cm, err := NewCertificateManager(caCertPath, caKeyPath)
+	if err != nil {
+		t.Fatalf("NewCertificateManager failed: %v", err)
+	}
+	defer cm.Close()
+
+	// Hand-craft an expired leaf (signed by the same CA) and poison the cache.
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey failed: %v", err)
+	}
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{Organization: []string{"Snirect Proxy"}},
+		NotBefore:    time.Now().Add(-48 * time.Hour),
+		NotAfter:     time.Now().Add(-24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:     []string{"github.com"},
+	}
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, cm.RootCert, &priv.PublicKey, cm.RootKey)
+	if err != nil {
+		t.Fatalf("CreateCertificate failed: %v", err)
+	}
+	cm.certCache.Store("github.com", &tls.Certificate{
+		Certificate: [][]byte{derBytes},
+		PrivateKey:  priv,
+	})
+
+	cert, err := cm.GetCertificate(&tls.ClientHelloInfo{ServerName: "github.com"})
+	if err != nil {
+		t.Fatalf("GetCertificate failed: %v", err)
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		t.Fatalf("ParseCertificate failed: %v", err)
+	}
+	if time.Now().After(leaf.NotAfter) {
+		t.Errorf("served expired cached leaf (not_after=%v), expected re-mint", leaf.NotAfter)
+	}
+	if _, ok := cm.certCache.Load("github.com"); !ok {
+		t.Error("expired entry was not replaced in cache")
+	}
+}
+
 // TestCertificateManager_Close tests that Close stops the cleanup routine without panic.
 func TestCertificateManager_Close(t *testing.T) {
 	tmpDir := t.TempDir()

@@ -225,7 +225,7 @@ func (cm *CertificateManager) SignLeafCert(hosts []string) ([]byte, interface{},
 			Organization: []string{"Snirect Proxy"},
 		},
 		NotBefore:   time.Now().Add(-1 * time.Hour),
-		NotAfter:    time.Now().Add(24 * time.Hour), // Short validity for leaf certs
+		NotAfter:    time.Now().Add(7 * 24 * time.Hour),
 		KeyUsage:    x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		DNSNames:    hosts,
