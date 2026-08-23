@@ -184,25 +184,43 @@ func startPprof() {
 
 func installCA(cfg *config.Config, appDir string) {
 	p := certPath(appDir)
-	switch cfg.CAInstall {
-	case "never":
+	if cfg.CAInstall == "never" {
 		logger.Control().Info("CA auto-install disabled")
 		return
-	case "always":
+	}
+
+	// systemd units have no TTY. sudo then fails with "需要密码" (and run0
+	// would stall on polkit). Skip; `snirect cert install` is the interactive path.
+	if skipPrivilegedCAInstall() {
+		installed, err := sysproxy.CheckCertStatus(p)
+		if err != nil || !installed {
+			logger.Control().Warn("CA not in system trust store; skipping install under systemd (cannot prompt for sudo). Run once: snirect cert install")
+		}
+		return
+	}
+
+	if cfg.CAInstall == "always" {
 		installed, err := sysproxy.ForceInstallCert(p)
 		if err != nil {
 			logger.Control().Warn("CA install failed", "error", err)
 		} else if installed {
 			logger.Control().Info("CA reinstalled")
 		}
-	default: // "auto" or ""
-		installed, err := sysproxy.InstallCert(p)
-		if err != nil {
-			logger.Control().Warn("CA install failed", "error", err)
-		} else if installed {
-			logger.Control().Info("CA installed")
-		}
+		return
 	}
+
+	installed, err := sysproxy.InstallCert(p)
+	if err != nil {
+		logger.Control().Warn("CA install failed", "error", err)
+	} else if installed {
+		logger.Control().Info("CA installed")
+	}
+}
+
+// skipPrivilegedCAInstall is true for a systemd unit that is not root.
+// INVOCATION_ID is set by systemd for every unit, including --user services.
+func skipPrivilegedCAInstall() bool {
+	return os.Getenv("INVOCATION_ID") != "" && os.Geteuid() != 0
 }
 
 func shouldSetProxy(cmd *cobra.Command, cfg *config.Config) bool {
