@@ -178,7 +178,7 @@ class SnirectTileService : TileService() {
                 else -> ""
             }
         }
-        tile.icon = Icon.createWithResource(this, R.drawable.snirect_logo)
+        tile.icon = Icon.createWithResource(this, R.drawable.ic_qs_snirect)
         tile.updateTile()
     }
 

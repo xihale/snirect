@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <!-- Top-Left Needle -->
+    <path
+        android:strokeColor="@color/snirect_logo_needle_1"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:pathData="M5.0,5.0 L12.0,12.0" />
+    <!-- Center Pivot Node -->
+    <path
+        android:fillColor="@color/snirect_logo_needle_1"
+        android:pathData="M 16,13.0 C 17.66,13.0 19.0,14.34 19.0,16 C 19.0,17.66 17.66,19.0 16,19.0 C 14.34,19.0 13.0,17.66 13.0,16 C 13.0,14.34 14.34,13.0 16,13.0 Z" />
+    <!-- Bottom-Right Needle -->
+    <path
+        android:strokeColor="@color/snirect_logo_needle_2"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:pathData="M20.0,20.0 L27.0,27.0" />
+</vector>

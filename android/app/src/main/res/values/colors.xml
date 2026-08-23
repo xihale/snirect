@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#000000</color>
+    <color name="ic_launcher_background">#2A2D32</color>
+    <color name="snirect_brand_dark_bg">#2A2D32</color>
+    <color name="snirect_brand_lavender">#D7B9FB</color>
+    <color name="snirect_brand_mint">#9FF9DD</color>
+    <color name="snirect_brand_light_bg">#FBF9EB</color>
+    <color name="snirect_brand_indigo">#403D83</color>
+    <color name="snirect_brand_teal">#086259</color>
+    
+    <!-- Logo Needle colors (Adaptive to Day/Night) -->
+    <color name="snirect_logo_needle_1">#403D83</color>
+    <color name="snirect_logo_needle_2">#086259</color>
 </resources>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark Mode Logo Needle colors -->
+    <color name="snirect_logo_needle_1">#D7B9FB</color>
+    <color name="snirect_logo_needle_2">#9FF9DD</color>
+</resources>
