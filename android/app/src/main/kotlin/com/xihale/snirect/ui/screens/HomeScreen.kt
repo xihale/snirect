@@ -7,7 +7,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -38,11 +41,16 @@ import com.xihale.snirect.BuildConfig
 import com.xihale.snirect.MainViewModel
 import com.xihale.snirect.R
 import com.xihale.snirect.data.repository.ConfigRepository
+import com.xihale.snirect.ktlib.AppUpdate
+import com.xihale.snirect.ktlib.SnirectClient
 import com.xihale.snirect.ui.theme.SnirectMotion
 import com.xihale.snirect.ui.theme.SnirectSpacing
 import com.xihale.snirect.ui.theme.pressScale
 import com.xihale.snirect.util.AppLogger
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +60,7 @@ fun HomeScreen(
     repository: ConfigRepository
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     // Cached on the activity ViewModel so popping back to Home does not
     // walk AndroidCAStore again (or flash the "checking" spinner).
@@ -59,6 +68,9 @@ fun HomeScreen(
     var showCertPrompt by remember { mutableStateOf(false) }
     var didPromptCert by rememberSaveable { mutableStateOf(false) }
     var didAttemptAutoStart by rememberSaveable { mutableStateOf(false) }
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var updateResult by remember { mutableStateOf<AppUpdate?>(null) }
+    var updateError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) { viewModel.ensureCertStatus() }
     LaunchedEffect(isCertInstalled) {
@@ -94,6 +106,77 @@ fun HomeScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showCertPrompt = false }) {
+                    Text(stringResource(R.string.action_later))
+                }
+            }
+        )
+    }
+
+    val fallbackReleaseUrl = "https://github.com/xihale/snirect/releases"
+    updateResult?.let { info ->
+        val openUrl = info.url.ifBlank { fallbackReleaseUrl }
+        AlertDialog(
+            onDismissRequest = { updateResult = null },
+            title = {
+                Text(
+                    stringResource(
+                        if (info.newer) R.string.update_available_title else R.string.update_current_title
+                    )
+                )
+            },
+            text = {
+                Text(
+                    if (info.newer) {
+                        stringResource(R.string.update_available_msg, info.current, info.latest)
+                    } else {
+                        stringResource(R.string.update_current_msg, info.latest)
+                    }
+                )
+            },
+            confirmButton = {
+                if (info.newer) {
+                    Button(
+                        onClick = {
+                            updateResult = null
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(openUrl)))
+                        }
+                    ) {
+                        Text(stringResource(R.string.action_open_release))
+                    }
+                } else {
+                    TextButton(onClick = { updateResult = null }) {
+                        Text(stringResource(R.string.action_later))
+                    }
+                }
+            },
+            dismissButton = if (info.newer) {
+                {
+                    TextButton(onClick = { updateResult = null }) {
+                        Text(stringResource(R.string.action_later))
+                    }
+                }
+            } else {
+                null
+            }
+        )
+    }
+    updateError?.let { err ->
+        AlertDialog(
+            onDismissRequest = { updateError = null },
+            title = { Text(stringResource(R.string.update_failed_title)) },
+            text = { Text(stringResource(R.string.update_failed_msg, err)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        updateError = null
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(fallbackReleaseUrl)))
+                    }
+                ) {
+                    Text(stringResource(R.string.action_open_release))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { updateError = null }) {
                     Text(stringResource(R.string.action_later))
                 }
             }
@@ -201,12 +284,39 @@ fun HomeScreen(
                 }
             )
 
-            // 3. Footer Version
+            // 3. Footer Version — tap to check GitHub Releases
+            val versionLabel = if (checkingUpdate) {
+                stringResource(R.string.update_checking)
+            } else {
+                stringResource(
+                    R.string.version_format,
+                    "${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})"
+                )
+            }
             Text(
-                text = stringResource(R.string.version_format, "${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})"),
+                text = versionLabel,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = SnirectSpacing.medium, bottom = SnirectSpacing.large),
+                    .clickable(enabled = !checkingUpdate) {
+                        checkingUpdate = true
+                        updateError = null
+                        updateResult = null
+                        scope.launch {
+                            try {
+                                val info = withContext(Dispatchers.IO) {
+                                    SnirectClient.from(context).checkUpdate(BuildConfig.VERSION_NAME)
+                                }
+                                updateResult = info
+                            } catch (e: Exception) {
+                                AppLogger.e("check update failed", e)
+                                updateError = e.message ?: e.toString()
+                            } finally {
+                                checkingUpdate = false
+                            }
+                        }
+                    }
+                    .padding(top = SnirectSpacing.medium, bottom = SnirectSpacing.large)
+                    .defaultMinSize(minHeight = SnirectSpacing.minTouchTarget),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.outline,
                 textAlign = TextAlign.Center

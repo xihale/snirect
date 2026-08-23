@@ -56,6 +56,7 @@ func init() {
 		configCmd,
 		statusCmd,
 		versionCmd,
+		updateCmd,
 		completionCmd,
 	)
 }

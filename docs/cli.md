@@ -5,6 +5,7 @@
 ./dist/snirect install     # 注册后台服务
 ./dist/snirect status
 ./dist/snirect uninstall
+./dist/snirect update --check
 ```
 
 | 命令 | 作用 |
@@ -20,5 +21,7 @@
 | `snirect proxy env` | 打出终端代理变量，`eval $(snirect proxy env)` |
 | `snirect config reset` | 重置 `config.toml`（证书保留） |
 | `snirect version` | 打印构建版本 |
+| `snirect update --check` | 查 GitHub Releases 是否有新版本（不下载） |
+| `snirect update` | 下载、校验 SHA256、覆盖已安装二进制；已注册服务则重启 |
 
 证书固定的客户端（网银等）不信任用户 CA，用 PAC / 规则排除。

@@ -80,6 +80,31 @@ func UninstallService() error {
 	return nil
 }
 
+// StopService stops the installed OS service. It is a no-op-shaped error if
+// the service is not installed; callers should check ServiceStatus first.
+func StopService() error {
+	s, err := service.New(serviceProgram{}, serviceConfig(getBinPath()))
+	if err != nil {
+		return fmt.Errorf("build service config: %w", err)
+	}
+	if err := s.Stop(); err != nil {
+		return fmt.Errorf("stop service: %w", err)
+	}
+	return nil
+}
+
+// StartService starts the installed OS service.
+func StartService() error {
+	s, err := service.New(serviceProgram{}, serviceConfig(getBinPath()))
+	if err != nil {
+		return fmt.Errorf("build service config: %w", err)
+	}
+	if err := s.Start(); err != nil {
+		return fmt.Errorf("start service: %w", err)
+	}
+	return nil
+}
+
 // ServiceStatus reports whether the OS service is installed and running,
 // reusing the existing sysproxy.ServiceState shape so status plumbing is
 // unchanged.

@@ -22,6 +22,14 @@
     <string name="bytes_sent">Bytes Sent</string>
     <string name="bytes_received">Bytes Received</string>
     <string name="version_format">Snirect %1$s</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_available_title">Update available</string>
+    <string name="update_available_msg">This device is on %1$s.\nLatest is %2$s.</string>
+    <string name="update_current_title">Up to date</string>
+    <string name="update_current_msg">Latest release is %1$s.</string>
+    <string name="update_failed_title">Could not check for updates</string>
+    <string name="update_failed_msg">%1$s\n\nOpen the releases page in a browser instead?</string>
+    <string name="action_open_release">Open releases</string>
 
     <!-- Certificate Prompt -->
     <string name="cert_required_title">Certificate Required</string>

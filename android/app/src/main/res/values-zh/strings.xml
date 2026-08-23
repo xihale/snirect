@@ -22,6 +22,14 @@
     <string name="bytes_sent">发送字节</string>
     <string name="bytes_received">接收字节</string>
     <string name="version_format">Snirect %1$s</string>
+    <string name="update_checking">正在检查更新…</string>
+    <string name="update_available_title">发现新版本</string>
+    <string name="update_available_msg">当前版本 %1$s。\n最新版本 %2$s。</string>
+    <string name="update_current_title">已是最新</string>
+    <string name="update_current_msg">最新发布为 %1$s。</string>
+    <string name="update_failed_title">无法检查更新</string>
+    <string name="update_failed_msg">%1$s\n\n改为在浏览器中打开发布页？</string>
+    <string name="action_open_release">打开发布页</string>
 
     <!-- Certificate Prompt -->
     <string name="cert_required_title">需要安装证书</string>

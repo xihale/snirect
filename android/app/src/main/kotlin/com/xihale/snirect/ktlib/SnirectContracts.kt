@@ -32,6 +32,15 @@ sealed interface EngineState {
     data class Stopped(val reason: String) : EngineState
 }
 
+/** Result of [SnirectClient.checkUpdate]. */
+data class AppUpdate(
+    val current: String,
+    val latest: String,
+    val newer: Boolean,
+    val url: String,
+    val notes: String,
+)
+
 data class SnirectEngineConfig(
     val nameservers: List<String> = emptyList(),
     val bootstrapDns: List<String> = emptyList(),

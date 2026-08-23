@@ -147,6 +147,11 @@ class SnirectClient private constructor(
         SnirectCoreBridge.isCaCertificateInstalled()
     }
 
+    /** Looks up the latest GitHub release. Does not download or install. */
+    suspend fun checkUpdate(current: String): AppUpdate = withContext(Dispatchers.IO) {
+        SnirectCoreBridge.checkUpdate(current)
+    }
+
     /** Entry point for the gomobile adapter; called on Go runtime threads. */
     internal fun handleEngineEvent(event: EngineEvent) {
         callbackScope.launch {
@@ -286,6 +291,18 @@ internal object SnirectCoreBridge {
     fun stopEngine() {
         requireInitialized()
         Core.stopEngine()
+    }
+
+    fun checkUpdate(current: String): AppUpdate {
+        val info = Core.checkUpdate(current)
+            ?: throw IllegalStateException("core returned null update info")
+        return AppUpdate(
+            current = info.current.orEmpty(),
+            latest = info.latest.orEmpty(),
+            newer = info.newer,
+            url = info.url.orEmpty(),
+            notes = info.notes.orEmpty(),
+        )
     }
 
     private fun requireInitialized() {
