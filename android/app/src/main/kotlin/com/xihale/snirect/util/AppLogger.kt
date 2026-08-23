@@ -14,8 +14,19 @@ object AppLogger {
     private const val LOG_FILE_NAME = "snirect.log"
     private const val LOG_FILE_MAX_BYTES = 256 * 1024L
 
-    private val hostPattern = Regex("(?i)(host|target|target_sni|sni|domain|remote_addr|ip)=([^\\s,]+)")
+    // Privacy boundary: destinations stay visible wherever the log remains on
+    // the device (in-app Logs screen, filesDir/snirect.log — the traffic itself
+    // is already on the device in richer form) and are scrubbed only where the
+    // text can leave: logcat (ROM diagnostics/bug reports sweep it) and the
+    // share button. IP literals are scrubbed too — addr= and error= used to
+    // leak the resolved destination while host= was covered, i.e. the answer
+    // with the question hidden.
+    private val hostPattern = Regex("(?i)(host|target|target_sni|sni|domain|remote_addr|addr|ip)=([^\\s,]+)")
     private val fdPattern = Regex("(?i)(fd)=\\d+")
+    private val ipv4Pattern = Regex("\\b\\d{1,3}(?:\\.\\d{1,3}){3}\\b")
+    // Bracketed IPv6 with at least two colon groups, so hex-word brackets like
+    // [DEBUG]/[ERROR] (non-hex letters) and single-colon spans never match.
+    private val ipv6Pattern = Regex("\\[(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}\\]")
 
     private const val LEVEL_DEBUG = 0
     private const val LEVEL_INFO = 1
@@ -62,40 +73,41 @@ object AppLogger {
         }
     }
 
-    private fun sanitize(message: String): String = message
+    /** Scrubs destinations for the channels where logs can leave the device
+     *  (logcat, share). Public so the Logs screen share button can pass its
+     *  in-memory buffer through the same funnel. */
+    fun sanitize(message: String): String = message
         .replace(hostPattern) { "${it.groupValues[1]}=<redacted>" }
         .replace(fdPattern) { "${it.groupValues[1]}=<redacted>" }
+        .replace(ipv4Pattern, "<ip>")
+        .replace(ipv6Pattern, "<ip>")
 
     fun d(message: String) {
         if (minLevel > LEVEL_DEBUG) return
-        val clean = sanitize(message)
-        Log.d(TAG, clean)
-        MainActivity.log("[DEBUG] $clean")
-        persist("DEBUG", clean)
+        Log.d(TAG, sanitize(message))
+        MainActivity.log("[DEBUG] $message")
+        persist("DEBUG", message)
     }
 
     fun i(message: String) {
         if (minLevel > LEVEL_INFO) return
-        val clean = sanitize(message)
-        Log.i(TAG, clean)
-        MainActivity.log("[INFO] $clean")
-        persist("INFO", clean)
+        Log.i(TAG, sanitize(message))
+        MainActivity.log("[INFO] $message")
+        persist("INFO", message)
     }
 
     fun w(message: String) {
         if (minLevel > LEVEL_WARN) return
-        val clean = sanitize(message)
-        Log.w(TAG, clean)
-        MainActivity.log("[WARN] $clean")
-        persist("WARN", clean)
+        Log.w(TAG, sanitize(message))
+        MainActivity.log("[WARN] $message")
+        persist("WARN", message)
     }
 
     fun e(message: String, throwable: Throwable? = null) {
         if (minLevel > LEVEL_ERROR) return
-        val clean = sanitize(message)
-        Log.e(TAG, clean, throwable)
-        MainActivity.log("[ERROR] $clean")
-        persist("ERROR", clean, throwable)
+        Log.e(TAG, sanitize(message), throwable)
+        MainActivity.log("[ERROR] $message")
+        persist("ERROR", message, throwable)
     }
 
     private fun persist(level: String, message: String, throwable: Throwable? = null) {

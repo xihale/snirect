@@ -44,6 +44,7 @@ import com.xihale.snirect.ui.theme.SnirectSpacing
 import com.xihale.snirect.ui.theme.SnirectWarning
 import com.xihale.snirect.ui.theme.SnirectWarningContainer
 import java.text.SimpleDateFormat
+import com.xihale.snirect.util.AppLogger
 import java.util.Date
 import java.util.Locale
 
@@ -93,8 +94,10 @@ fun LogsScreen(navController: NavController) {
         topBarStyle = AppTopBarStyle.Top,
         actions = {
             IconButton(onClick = {
+                // Share is the one channel where logs leave the device, so the
+                // in-memory buffer (kept raw for debugging) is scrubbed here.
                 val logText = filteredLogs.joinToString("\n") { entry ->
-                    "[${dateFormat.format(Date(entry.timestamp))}] [${entry.level}] ${entry.message}"
+                    "[${dateFormat.format(Date(entry.timestamp))}] [${entry.level}] ${AppLogger.sanitize(entry.message)}"
                 }
                 val intent = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
