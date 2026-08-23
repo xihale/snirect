@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +31,9 @@ class ConfigRepository(
         val KEY_WHITELIST_PACKAGES = stringPreferencesKey("whitelist_packages")
         val KEY_BYPASS_LAN = booleanPreferencesKey("bypass_lan")
         val KEY_IPV6_MODE = intPreferencesKey("ipv6_mode")
+        val KEY_AUTO_UPDATE_CHECK = booleanPreferencesKey("auto_update_check")
+        val KEY_UPDATE_CHECK_INTERVAL = intPreferencesKey("update_check_interval")
+        val KEY_LAST_UPDATE_CHECK = longPreferencesKey("last_update_check")
         // Legacy keys, read once to migrate into KEY_IPV6_MODE.
         val KEY_ENABLE_IPV6 = booleanPreferencesKey("enable_ipv6")
         val KEY_BLOCK_IPV6 = booleanPreferencesKey("block_ipv6")
@@ -47,6 +51,18 @@ class ConfigRepository(
         const val DEFAULT_NAMESERVERS = "https://dnschina1.soraharu.com/dns-query,tls://223.5.5.5"
         const val DEFAULT_BOOTSTRAP_DNS = "tls://223.5.5.5"
         const val LANGUAGE_SYSTEM = "system"
+
+        // Auto update-check frequency (Settings → About).
+        const val UPDATE_INTERVAL_EVERY_LAUNCH = 0
+        const val UPDATE_INTERVAL_DAILY = 1
+        const val UPDATE_INTERVAL_WEEKLY = 2
+
+        /** Interval mode → minimum gap between two auto checks. */
+        fun updateIntervalMs(mode: Int): Long = when (mode) {
+            UPDATE_INTERVAL_EVERY_LAUNCH -> 0L
+            UPDATE_INTERVAL_WEEKLY -> 7L * 24 * 60 * 60 * 1000
+            else -> 24L * 60 * 60 * 1000
+        }
     }
 
     val nameservers: Flow<List<String>> =
@@ -75,6 +91,10 @@ class ConfigRepository(
         it[KEY_WHITELIST_PACKAGES]?.split(",")?.filter { p -> p.isNotBlank() }?.toSet() ?: emptySet()
     }
     val bypassLan: Flow<Boolean> = context.dataStore.data.map { it[KEY_BYPASS_LAN] ?: true }
+    val autoUpdateCheck: Flow<Boolean> = context.dataStore.data.map { it[KEY_AUTO_UPDATE_CHECK] ?: true }
+    val updateCheckInterval: Flow<Int> =
+        context.dataStore.data.map { it[KEY_UPDATE_CHECK_INTERVAL] ?: UPDATE_INTERVAL_DAILY }
+    val lastUpdateCheck: Flow<Long> = context.dataStore.data.map { it[KEY_LAST_UPDATE_CHECK] ?: 0L }
 
     val ipv6Mode: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[KEY_IPV6_MODE] ?: when {
@@ -106,6 +126,9 @@ class ConfigRepository(
         it[KEY_WHITELIST_PACKAGES] = packages.joinToString(",")
     }
     suspend fun setBypassLan(enable: Boolean) = context.dataStore.edit { it[KEY_BYPASS_LAN] = enable }
+    suspend fun setAutoUpdateCheck(enable: Boolean) = context.dataStore.edit { it[KEY_AUTO_UPDATE_CHECK] = enable }
+    suspend fun setUpdateCheckInterval(mode: Int) = context.dataStore.edit { it[KEY_UPDATE_CHECK_INTERVAL] = mode }
+    suspend fun setLastUpdateCheck(epochMs: Long) = context.dataStore.edit { it[KEY_LAST_UPDATE_CHECK] = epochMs }
 
     suspend fun setIpv6Mode(mode: Int) = context.dataStore.edit { prefs ->
         prefs[KEY_IPV6_MODE] = mode

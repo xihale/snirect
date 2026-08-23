@@ -21,7 +21,6 @@
     <string name="cert_checking">Checking...</string>
     <string name="bytes_sent">Bytes Sent</string>
     <string name="bytes_received">Bytes Received</string>
-    <string name="version_format">Snirect %1$s</string>
     <string name="update_checking">Checking for updates…</string>
     <string name="update_available_title">Update available</string>
     <string name="update_available_msg">This device is on %1$s.\nLatest is %2$s.</string>
@@ -102,6 +101,18 @@
     <string name="group_advanced">Advanced</string>
     <string name="setting_log_level">Log Level</string>
     <string name="setting_log_level_desc">Current: %1$s</string>
+
+    <!-- About group (Settings) -->
+    <string name="group_about">About</string>
+    <string name="about_version">Version</string>
+    <string name="about_source_code">Source Code</string>
+    <string name="about_check_update">Check for Updates</string>
+    <string name="about_auto_check">Auto-check Updates</string>
+    <string name="about_auto_check_desc">Check GitHub Releases on app launch</string>
+    <string name="about_check_frequency">Check Frequency</string>
+    <string name="option_freq_every_launch">Every launch</string>
+    <string name="option_freq_daily">Daily</string>
+    <string name="option_freq_weekly">Weekly</string>
 
     <!-- Security Warning Dialog -->
     <string name="security_warning_title">Security Warning</string>

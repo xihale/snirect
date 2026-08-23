@@ -10,27 +10,40 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Compress
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.FilterAlt
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Route
 import androidx.compose.material.icons.outlined.Router
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.Update
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.xihale.snirect.BuildConfig
 import com.xihale.snirect.R
 import com.xihale.snirect.data.repository.ConfigRepository
+import com.xihale.snirect.ktlib.AppUpdate
 import com.xihale.snirect.ui.components.AppScreenScaffold
+import com.xihale.snirect.ui.components.SOURCE_URL
 import com.xihale.snirect.ui.components.SettingsGroup
 import com.xihale.snirect.ui.components.SettingsOptionRow
 import com.xihale.snirect.ui.components.SettingsTile
+import com.xihale.snirect.ui.components.UpdateCheckDialogs
+import com.xihale.snirect.ui.components.checkForUpdate
+import com.xihale.snirect.ui.components.openInBrowser
 import com.xihale.snirect.ui.theme.SnirectSpacing
+import com.xihale.snirect.util.AppLogger
 import kotlinx.coroutines.launch
 
 @Composable
@@ -39,6 +52,7 @@ fun SettingsScreen(
     repository: ConfigRepository
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     var mtu by remember { mutableStateOf("1500") }
     var ipv6Mode by remember { mutableIntStateOf(ConfigRepository.IPV6_MODE_EXCLUDE_V6) }
@@ -50,6 +64,11 @@ fun SettingsScreen(
     var whitelistPackages by remember { mutableStateOf(setOf<String>()) }
     var bypassLan by remember { mutableStateOf(true) }
     var nameservers by remember { mutableStateOf<List<String>>(emptyList()) }
+    var autoUpdateCheck by remember { mutableStateOf(true) }
+    var updateCheckInterval by remember { mutableIntStateOf(ConfigRepository.UPDATE_INTERVAL_DAILY) }
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var updateResult by remember { mutableStateOf<AppUpdate?>(null) }
+    var updateError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) { repository.mtu.collect { mtu = it.toString() } }
     LaunchedEffect(Unit) { repository.ipv6Mode.collect { ipv6Mode = it } }
@@ -61,6 +80,8 @@ fun SettingsScreen(
     LaunchedEffect(Unit) { repository.whitelistPackages.collect { whitelistPackages = it } }
     LaunchedEffect(Unit) { repository.bypassLan.collect { bypassLan = it } }
     LaunchedEffect(Unit) { repository.nameservers.collect { nameservers = it } }
+    LaunchedEffect(Unit) { repository.autoUpdateCheck.collect { autoUpdateCheck = it } }
+    LaunchedEffect(Unit) { repository.updateCheckInterval.collect { updateCheckInterval = it } }
 
     var showMtuDialog by remember { mutableStateOf(false) }
 
@@ -254,8 +275,100 @@ fun SettingsScreen(
                     }
                 )
             }
+
+            // 6. ABOUT GROUP — version, source, and update checks. The
+            // manual check also refreshes lastUpdateCheck, keeping the
+            // next silent auto-check one full interval away.
+            SettingsGroup(title = stringResource(R.string.group_about)) {
+                SettingsTile(
+                    icon = Icons.Outlined.Info,
+                    title = stringResource(R.string.about_version),
+                    subtitle = BuildConfig.VERSION_NAME
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerLow, thickness = 1.dp)
+
+                SettingsTile(
+                    icon = Icons.Outlined.Code,
+                    title = stringResource(R.string.about_source_code),
+                    subtitle = SOURCE_URL.removePrefix("https://"),
+                    onClick = { openInBrowser(context, SOURCE_URL) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerLow, thickness = 1.dp)
+
+                SettingsTile(
+                    icon = Icons.Outlined.Update,
+                    title = stringResource(R.string.about_check_update),
+                    subtitle = if (checkingUpdate) stringResource(R.string.update_checking) else null,
+                    onClick = {
+                        if (!checkingUpdate) {
+                            checkingUpdate = true
+                            updateResult = null
+                            updateError = null
+                            scope.launch {
+                                try {
+                                    val info = checkForUpdate(context)
+                                    repository.setLastUpdateCheck(System.currentTimeMillis())
+                                    updateResult = info
+                                } catch (e: Exception) {
+                                    AppLogger.e("check update failed", e)
+                                    updateError = e.message ?: e.toString()
+                                } finally {
+                                    checkingUpdate = false
+                                }
+                            }
+                        }
+                    }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerLow, thickness = 1.dp)
+
+                SettingsTile(
+                    icon = Icons.Outlined.SystemUpdate,
+                    title = stringResource(R.string.about_auto_check),
+                    subtitle = stringResource(R.string.about_auto_check_desc),
+                    trailing = {
+                        Switch(
+                            checked = autoUpdateCheck,
+                            onCheckedChange = {
+                                autoUpdateCheck = it
+                                scope.launch { repository.setAutoUpdateCheck(it) }
+                            }
+                        )
+                    }
+                )
+
+                // Frequency only matters while auto-check is on; the group's
+                // animateContentSize slides the row in/out with the toggle.
+                if (autoUpdateCheck) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerLow, thickness = 1.dp)
+
+                    SettingsOptionRow(
+                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.about_check_frequency),
+                        options = listOf(
+                            ConfigRepository.UPDATE_INTERVAL_EVERY_LAUNCH to stringResource(R.string.option_freq_every_launch),
+                            ConfigRepository.UPDATE_INTERVAL_DAILY to stringResource(R.string.option_freq_daily),
+                            ConfigRepository.UPDATE_INTERVAL_WEEKLY to stringResource(R.string.option_freq_weekly)
+                        ),
+                        selectedKey = updateCheckInterval,
+                        onSelect = { selected ->
+                            updateCheckInterval = selected
+                            scope.launch { repository.setUpdateCheckInterval(selected) }
+                        }
+                    )
+                }
+            }
         }
     }
+
+    UpdateCheckDialogs(
+        updateResult = updateResult,
+        updateError = updateError,
+        onClearResult = { updateResult = null },
+        onClearError = { updateError = null }
+    )
 
     // MTU Edit Dialog
     if (showMtuDialog) {

@@ -21,7 +21,6 @@
     <string name="cert_checking">检测中...</string>
     <string name="bytes_sent">发送字节</string>
     <string name="bytes_received">接收字节</string>
-    <string name="version_format">Snirect %1$s</string>
     <string name="update_checking">正在检查更新…</string>
     <string name="update_available_title">发现新版本</string>
     <string name="update_available_msg">当前版本 %1$s。\n最新版本 %2$s。</string>
@@ -102,6 +101,18 @@
     <string name="group_advanced">高级设置</string>
     <string name="setting_log_level">日志级别</string>
     <string name="setting_log_level_desc">当前: %1$s</string>
+
+    <!-- About group (Settings) -->
+    <string name="group_about">关于</string>
+    <string name="about_version">版本</string>
+    <string name="about_source_code">源码</string>
+    <string name="about_check_update">检查更新</string>
+    <string name="about_auto_check">自动检查更新</string>
+    <string name="about_auto_check_desc">启动应用时后台检查 GitHub Releases</string>
+    <string name="about_check_frequency">检查频率</string>
+    <string name="option_freq_every_launch">每次启动</string>
+    <string name="option_freq_daily">每天</string>
+    <string name="option_freq_weekly">每周</string>
 
     <!-- Security Warning Dialog -->
     <string name="security_warning_title">安全警告</string>
