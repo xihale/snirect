@@ -7,9 +7,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.*
@@ -77,7 +77,7 @@ fun DnsScreen(
                 contentColor = MaterialTheme.colorScheme.onPrimary,
                 shape = CircleShape
             ) {
-                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.action_add_server))
+                Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.action_add_server))
             }
         }
     ) { padding ->
@@ -107,7 +107,7 @@ fun DnsScreen(
                                 scope.launch { repository.setBootstrapDns(list) }
                             }) {
                                 Icon(
-                                    Icons.Default.Check,
+                                    Icons.Outlined.Check,
                                     contentDescription = stringResource(R.string.action_save),
                                     tint = MaterialTheme.colorScheme.primary
                                 )
@@ -239,7 +239,7 @@ fun DnsScreen(
                                 }
                             ) {
                                 Icon(
-                                    Icons.Default.Delete,
+                                    Icons.Outlined.Delete,
                                     contentDescription = stringResource(R.string.action_remove),
                                     tint = MaterialTheme.colorScheme.error
                                 )

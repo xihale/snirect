@@ -7,8 +7,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -130,7 +130,7 @@ fun AppSearchField(
         },
         leadingIcon = {
             Icon(
-                Icons.Default.Search,
+                Icons.Outlined.Search,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.outline
             )
@@ -139,7 +139,7 @@ fun AppSearchField(
             if (query.isNotEmpty()) {
                 IconButton(onClick = { onQueryChange("") }) {
                     Icon(
-                        Icons.Default.Close,
+                        Icons.Outlined.Close,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.outline
                     )

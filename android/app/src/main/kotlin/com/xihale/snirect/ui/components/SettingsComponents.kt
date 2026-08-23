@@ -7,8 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -169,7 +169,7 @@ fun SettingsRiskGroup(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Warning,
+                    imageVector = Icons.Outlined.WarningAmber,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(16.dp)
@@ -275,7 +275,7 @@ fun <T> SettingsOptionRow(
                             trailingIcon = if (key == selectedKey) {
                                 {
                                     Icon(
-                                        imageVector = Icons.Default.Check,
+                                        imageVector = Icons.Outlined.Check,
                                         contentDescription = null
                                     )
                                 }

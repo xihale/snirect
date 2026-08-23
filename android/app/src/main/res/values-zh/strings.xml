@@ -160,6 +160,10 @@
     <string name="share_logs_chooser">分享日志</string>
     <string name="tab_all">全部</string>
     <string name="no_logs_found">暂无日志可显示</string>
+    <string name="toast_log_copied">日志已复制到剪贴板</string>
+    <string name="dialog_clear_logs_title">清空日志？</string>
+    <string name="dialog_clear_logs_msg">这将清除当前所有已缓冲记录的日志。</string>
+    <string name="action_jump_to_latest">回到最新</string>
     <string name="no_apps_found">未找到匹配的应用</string>
     <string name="filter_browsers">浏览器</string>
     <string name="filter_selected_apps">已选</string>

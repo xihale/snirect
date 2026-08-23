@@ -27,10 +27,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.GppBad
-import androidx.compose.material.icons.outlined.VerifiedUser
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -164,8 +164,8 @@ fun HelpScreen(
                                     Icon(
                                         imageVector = when (step) {
                                             1 -> Icons.Outlined.Download
-                                            2 -> Icons.Default.Settings
-                                            else -> Icons.Outlined.VerifiedUser
+                                            2 -> Icons.Outlined.Settings
+                                            else -> Icons.Outlined.CheckCircle
                                         },
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.primary,
@@ -307,7 +307,7 @@ fun HelpScreen(
                                         .height(50.dp)
                                         .pressScale(interactionSource = openSettingsInteraction)
                                 ) {
-                                    Icon(Icons.Default.Settings, contentDescription = null)
+                                    Icon(Icons.Outlined.Settings, contentDescription = null)
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(stringResource(R.string.action_open_security_settings))
                                 }
@@ -341,7 +341,7 @@ fun HelpScreen(
                                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                                         ) {
                                             Icon(
-                                                imageVector = if (isVerified) Icons.Outlined.VerifiedUser else Icons.Outlined.GppBad,
+                                                imageVector = if (isVerified) Icons.Outlined.CheckCircle else Icons.Outlined.WarningAmber,
                                                 contentDescription = null,
                                                 tint = if (isVerified) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error
                                             )
@@ -427,8 +427,8 @@ private fun StepProgressHeader(
 ) {
     val steps = listOf(
         Triple(1, stringResource(R.string.step_export), Icons.Outlined.Download),
-        Triple(2, stringResource(R.string.step_install), Icons.Default.Settings),
-        Triple(3, stringResource(R.string.step_verify), Icons.Outlined.VerifiedUser),
+        Triple(2, stringResource(R.string.step_install), Icons.Outlined.Settings),
+        Triple(3, stringResource(R.string.step_verify), Icons.Outlined.CheckCircle),
     )
 
     BoxWithConstraints(
