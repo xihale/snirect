@@ -265,7 +265,12 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 			// Offer the upstream exactly the protocols the client offered, so
 			// the upstream's choice is necessarily something the client can
 			// also speak. If the client offered nothing, pin http/1.1.
-			rc, err := s.connectToRemote(r.Context(), host, port, r.RemoteAddr, targetSNI, upstreamOffer(hello.SupportedProtos))
+			// GitHub archive intern-follow parses HTTP/1.1, so pin it there.
+			offer := upstreamOffer(hello.SupportedProtos)
+			if isGitHubHTTPHost(clientSNI) || isGitHubHTTPHost(host) {
+				offer = []string{"http/1.1"}
+			}
+			rc, err := s.connectToRemote(r.Context(), host, port, r.RemoteAddr, targetSNI, offer)
 			if err != nil {
 				return nil, err // connectToRemote already logged (DNS/dial/handshake)
 			}
@@ -322,9 +327,17 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 6. Tunnel Data. Success is per-connection churn; log at DEBUG so INFO
-	// stays quiet and the operator's signal is failures (deduped).
+	// 6. GitHub archive/codeload: intern-follow the 302 so the client never
+	// hits the broken dedicated-vhost 301→404. Other MITM hosts stay a pipe.
 	logger.Upstream().Debug("tls tunnel established", "host", host, "alpn", remoteConn.ConnectionState().NegotiatedProtocol)
+	clientSNI := tlsClientConn.ConnectionState().ServerName
+	if clientSNI == "" {
+		clientSNI = host
+	}
+	if isGitHubHTTPHost(clientSNI) || isGitHubHTTPHost(host) {
+		s.serveGitHubH1(tlsClientConn, remoteConn, clientSNI, r.RemoteAddr, r.Context())
+		return
+	}
 	s.tunnel(tlsClientConn, remoteConn)
 }
 
@@ -467,78 +480,63 @@ func (s *ProxyServer) directTunnel(ctx context.Context, clientConn net.Conn, hos
 	s.tunnel(clientConn, remoteConn)
 }
 
-// tunnel pipes data between c1 and c2. It closes both connections when done.
-// Fixed: Added context cancellation, error propagation, and timeout to prevent resource leaks.
-// Optimized: Uses configurable buffer size for better throughput.
-func (s *ProxyServer) tunnel(c1, c2 net.Conn) {
-	// 5 minute timeout to prevent indefinite blocking
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+// tunnelIdle is how long a tunneled connection may sit with no bytes before
+// we tear it down. Absolute caps used to kill large GitHub/release downloads
+// that still had data flowing.
+const tunnelIdle = 5 * time.Minute
 
+// tunnel pipes data between c1 and c2. It closes both connections when done.
+func (s *ProxyServer) tunnel(c1, c2 net.Conn) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	errCh := make(chan error, 2) // Buffered to prevent goroutine leak
-
-	// Determine buffer size with bounds checking
 	bufSize := s.Config.Server.BufferSize
 	if bufSize <= 0 {
-		bufSize = 65536 // default 64KB
+		bufSize = 65536
 	}
 	if bufSize < 4096 {
-		bufSize = 4096 // minimum 4KB
+		bufSize = 4096
 	}
 	if bufSize > 1048576 {
-		bufSize = 1048576 // maximum 1MB
+		bufSize = 1048576
 	}
 
 	pipe := func(dst, src net.Conn) {
 		defer wg.Done()
-
-		// Check for cancellation before starting
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		// Use a dedicated buffer for this direction
+		defer func() {
+			c1.Close()
+			c2.Close()
+		}()
 		buf := make([]byte, bufSize)
-		_, err := io.CopyBuffer(dst, src, buf)
-		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
-			// Send error without blocking
-			select {
-			case errCh <- err:
-			default:
+		for {
+			_ = src.SetReadDeadline(time.Now().Add(tunnelIdle))
+			n, err := src.Read(buf)
+			if n > 0 {
+				if _, werr := dst.Write(buf[:n]); werr != nil {
+					if !errors.Is(werr, net.ErrClosed) {
+						logger.Upstream().Debug("tunnel copy error", "error", werr)
+					}
+					return
+				}
 			}
-		}
-
-		// Attempt to close the write side of the destination connection
-		// This signals the other direction that we're done writing.
-		if cw, ok := dst.(interface{ CloseWrite() error }); ok {
-			_ = cw.CloseWrite()
+			if err != nil {
+				if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) && !isTimeout(err) {
+					logger.Upstream().Debug("tunnel copy error", "error", err)
+				}
+				if cw, ok := dst.(interface{ CloseWrite() error }); ok {
+					_ = cw.CloseWrite()
+				}
+				return
+			}
 		}
 	}
 
 	go pipe(c1, c2)
 	go pipe(c2, c1)
+	wg.Wait()
+}
 
-	// Wait for both goroutines or first error
-	go func() {
-		wg.Wait()
-		cancel()
-	}()
-
-	// Wait for first error or cancellation
-	select {
-	case err := <-errCh:
-		if err != nil {
-			logger.Upstream().Debug("tunnel copy error", "error", err)
-		}
-	case <-ctx.Done():
-	}
-
-	// Ensure both connections are closed
-	c1.Close()
-	c2.Close()
+func isTimeout(err error) bool {
+	var nerr net.Error
+	return errors.As(err, &nerr) && nerr.Timeout()
 }
