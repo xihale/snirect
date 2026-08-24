@@ -16,6 +16,14 @@ var installCmd = &cobra.Command{
   macOS:   /usr/local/bin + launchd agent
   Windows: %LOCALAPPDATA%\Programs + Task Scheduler`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if _, pkg, ok := service.OwningPackage(); ok {
+			if err := service.Install(); err != nil {
+				return err
+			}
+			fmt.Printf("Service enabled for the pacman-managed binary (%s)\n", pkg)
+			fmt.Println("Next: snirect cert install")
+			return nil
+		}
 		if err := service.Install(); err != nil {
 			return err
 		}

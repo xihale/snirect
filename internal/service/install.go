@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/xihale/snirect/internal/logger"
 )
@@ -73,7 +75,14 @@ func replaceFileWindows(src, dst string) error {
 }
 
 // Install copies the binary to the system PATH and sets up the service.
+// When the running binary is owned by a system package (AUR/pacman), the
+// copy is skipped and the packaged systemd user unit is enabled instead, so
+// ~/.local/bin never shadows package upgrades with a stale binary.
 func Install() error {
+	if exe, pkg, ok := OwningPackage(); ok {
+		return installPackaged(exe, pkg)
+	}
+
 	binPath := getBinPath()
 
 	logger.System().Info("installing binary", "path", binPath)
@@ -94,6 +103,63 @@ func Install() error {
 	}
 
 	return InstallService(binPath)
+}
+
+// packagedUnitPath is where distro packages (AUR) ship the systemd user unit.
+// Only referenced on the OwningPackage() path, which is Linux-only at runtime.
+const packagedUnitPath = "/usr/lib/systemd/user/snirect.service"
+
+// installPackaged wires up the service for a pacman-owned binary without
+// copying it anywhere. Unreachable off Linux (OwningPackage gates the call).
+func installPackaged(exePath, pkg string) error {
+	homeDir, _ := os.UserHomeDir()
+
+	// A stale ~/.local/bin copy from the GitHub-binary flow would shadow the
+	// packaged binary on PATH; drop it along with its unit so pacman stays in
+	// charge of what runs.
+	legacyBin := getBinPath()
+	if _, err := os.Stat(legacyBin); err == nil {
+		if err := os.Remove(legacyBin); err != nil {
+			logger.System().Warn("failed to remove legacy ~/.local/bin copy; remove it manually", "error", err)
+		} else {
+			logger.System().Info("removed legacy binary copy", "path", legacyBin)
+		}
+	}
+
+	// A user unit written by the old `snirect install` shadows the packaged
+	// one; remove it so /usr/lib/systemd/user takes over.
+	userUnit := filepath.Join(homeDir, ".config/systemd/user", ServiceName+".service")
+	if _, err := os.Stat(userUnit); err == nil {
+		_ = runSystemdUser("disable", "--now", ServiceName)
+		if err := os.Remove(userUnit); err == nil {
+			_ = runSystemdUser("daemon-reload")
+			logger.System().Info("removed legacy user unit in favor of the packaged one", "path", userUnit)
+		}
+	}
+
+	if _, err := os.Stat(packagedUnitPath); err == nil {
+		if err := runSystemdUser("enable", "--now", ServiceName); err != nil {
+			return fmt.Errorf("enable packaged service: %w", err)
+		}
+		logger.System().Info("enabled packaged user service", "package", pkg, "unit", packagedUnitPath)
+		return nil
+	}
+
+	// Package predates the shipped unit (older pkgrel): register a user unit
+	// pointing at the packaged binary. Still no copy, so upgrades keep working.
+	logger.System().Warn("package ships no user unit; writing one for the packaged binary", "package", pkg)
+	return InstallService(exePath)
+}
+
+// runSystemdUser runs systemctl in the user manager, returning its combined
+// output in the error for context.
+func runSystemdUser(args ...string) error {
+	full := append([]string{"--user"}, args...)
+	out, err := exec.Command("systemctl", full...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("systemctl %s: %s", strings.Join(full, " "), strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func copyFile(src, dst string) error {

@@ -1,0 +1,14 @@
+# systemd user unit shipped by the AUR packages (snirect / snirect-bin).
+# Canonical copy lives in the repo; PKGBUILDs embed the same content inline.
+[Unit]
+Description=Snirect - SNI RST bypass proxy
+Documentation=https://github.com/xihale/snirect
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/snirect
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

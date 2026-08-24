@@ -13,7 +13,15 @@ import (
 func Uninstall() error {
 	logger.System().Info("starting uninstall")
 
-	if err := UninstallService(); err != nil {
+	if _, pkg, ok := OwningPackage(); ok {
+		// Package-managed install: the unit file and binary belong to the
+		// package, so only disable the service. The config/CA cleanup below
+		// still applies; the package itself is removed with pacman.
+		logger.System().Info("package-managed install; disabling service only", "package", pkg)
+		if err := runSystemdUser("disable", "--now", ServiceName); err != nil {
+			logger.System().Warn("failed to disable service", "error", err)
+		}
+	} else if err := UninstallService(); err != nil {
 		logger.System().Warn("service uninstall had errors", "error", err)
 	}
 

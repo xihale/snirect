@@ -12,8 +12,8 @@
 | :--- | :--- |
 | `snirect [-s]` | 前台跑代理。`-s` 同时设系统代理 |
 | `snirect status` | 服务、系统代理、CA、当前配置 |
-| `snirect install` | 装二进制并注册后台服务（Linux systemd user / macOS launchd / Windows Service） |
-| `snirect uninstall` | 卸服务、配置和系统代理 |
+| `snirect install` | 装二进制并注册后台服务（Linux systemd user / macOS launchd / Windows Service）；二进制由包管理器（AUR/pacman）安装时只注册服务，不动二进制 |
+| `snirect uninstall` | 卸服务、配置和系统代理；包管理器安装时只 disable 服务（包本身用 pacman 卸） |
 | `snirect cert install` | 把根 CA 装进系统信任库 |
 | `snirect cert remove` | 卸系统 CA |
 | `snirect cert firefox install` | 写进本机所有 Firefox `cert9.db` |
@@ -24,7 +24,7 @@
 | `snirect rules clash` | 输出 clash/mihomo 规则行（粘进 rules 列表），`--policy` 同上 |
 | `snirect version` | 打印构建版本 |
 | `snirect update --check` | 查 GitHub Releases 是否有新版本（不下载） |
-| `snirect update` | 下载、校验 SHA256、覆盖已安装二进制；已注册服务则重启 |
+| `snirect update` | 下载、校验 SHA256、覆盖已安装二进制；已注册服务则重启；包管理器安装时拒绝自更新，提示走 pacman |
 
 证书固定的客户端（网银等）不信任用户 CA，用 PAC / 规则排除。
 
