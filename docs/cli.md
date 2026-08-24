@@ -20,8 +20,17 @@
 | `snirect proxy set` / `unset` | 手动开/关系统 PAC 代理 |
 | `snirect proxy env` | 打出终端代理变量，`eval $(snirect proxy env)` |
 | `snirect config reset` | 重置 `config.toml`（证书保留） |
+| `snirect rules dae` | 输出 dae 格式域名规则块（粘进 routing 段），`--policy` 指向策略组（默认 `snirect`） |
+| `snirect rules clash` | 输出 clash/mihomo 规则行（粘进 rules 列表），`--policy` 同上 |
 | `snirect version` | 打印构建版本 |
 | `snirect update --check` | 查 GitHub Releases 是否有新版本（不下载） |
 | `snirect update` | 下载、校验 SHA256、覆盖已安装二进制；已注册服务则重启 |
 
 证书固定的客户端（网银等）不信任用户 CA，用 PAC / 规则排除。
+
+上游用 dae/clash 分流时，把 snirect 认识的域名导出去：
+
+```bash
+snirect rules dae  >> my-dae.conf   # domain(...) -> snirect 块
+snirect rules clash > snirect.yaml  # - DOMAIN-SUFFIX,... 行
+```

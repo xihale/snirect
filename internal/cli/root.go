@@ -48,12 +48,17 @@ func init() {
 
 	configCmd.AddCommand(configResetCmd)
 
+	rulesDAECmd.Flags().StringVar(&rulesDAEPolicy, "policy", "snirect", "dae group the rules point to")
+	rulesClashCmd.Flags().StringVar(&rulesClashPolicy, "policy", "snirect", "clash policy the rules point to")
+	rulesCmd.AddCommand(rulesDAECmd, rulesClashCmd)
+
 	rootCmd.AddCommand(
 		installCmd,
 		uninstallCmd,
 		certCmd,
 		proxyCmd,
 		configCmd,
+		rulesCmd,
 		statusCmd,
 		versionCmd,
 		updateCmd,
