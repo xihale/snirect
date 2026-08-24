@@ -26,16 +26,10 @@ func installCertPlatform(certPath string) (bool, error) {
 	// to prevent duplicates (trust anchor --store creates .1, .2, ... suffixes)
 	cleanSnirectPK11TrustAnchors()
 
-	// Prefer the distro's standard trust-store layout when present:
-	// Debian/Ubuntu keep local anchors in /usr/local/share/ca-certificates
-	// and refresh via update-ca-certificates, which is the documented way
-	// (sudo cp your.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates).
-	if isDebianTrustStore() {
-		logger.System().Info("detected Debian-style trust store, installing via update-ca-certificates")
-		return installCertViaAnchors(certPath)
-	}
-
-	// Use trust tool (p11-kit)
+	// Prefer the p11-kit trust tool on any distro that ships it. Distro
+	// detection via directory layout is unreliable: /usr/local/share/ca-certificates
+	// can exist on Arch/Manjaro too (mkcert/reqable create it), which made the
+	// old Debian-first check misroute Manjaro into update-ca-certificates.
 	if path, err := exec.LookPath("trust"); err == nil {
 		logger.System().Info("installing certificate with trust tool")
 		cmd := exec.Command("sudo", path, "anchor", "--store", certPath)
@@ -46,29 +40,32 @@ func installCertPlatform(certPath string) (bool, error) {
 			return false, fmt.Errorf("使用 trust 工具安装证书失败: %v\n请尝试手动运行: sudo trust anchor --store %s", err, certPath)
 		}
 
-		if _, err := exec.LookPath("update-ca-trust"); err == nil {
-			_ = exec.Command("sudo", "update-ca-trust", "extract").Run()
-		}
+		refreshLinuxTrustBundle()
 
 		if isCertInstalled(certPath) {
 			return true, nil
 		}
-		return false, fmt.Errorf("使用 trust 工具安装后仍未检测到证书。请尝试手动安装。")
+		// trust anchor succeeded but the system bundle does not include the
+		// anchor (e.g. Debian layouts that only rebuild via
+		// update-ca-certificates) — fall through to the anchors path below.
+		logger.System().Warn("trust tool install not visible in system bundle, falling back to distro anchor directories")
 	}
 
-	logger.System().Info("trust tool not found, trying legacy certificate install")
+	// No trust tool, or its result did not verify: copy the CA into the
+	// distro's anchor directory and refresh with the matching update command.
+	logger.System().Info("installing certificate via distro anchor directories")
 	return installCertViaAnchors(certPath)
 }
 
-// isDebianTrustStore reports whether this system uses the Debian/Ubuntu CA
-// layout: local anchors dropped into /usr/local/share/ca-certificates and
-// merged into the bundle by update-ca-certificates.
-func isDebianTrustStore() bool {
-	if _, err := os.Stat("/usr/local/share/ca-certificates/"); err != nil {
-		return false
+// refreshLinuxTrustBundle rebuilds the merged system CA bundle with whatever
+// update command the distro ships. Best-effort: callers verify the install
+// against the on-disk bundle afterwards.
+func refreshLinuxTrustBundle() {
+	if _, err := exec.LookPath("update-ca-trust"); err == nil {
+		_ = exec.Command("sudo", "update-ca-trust", "extract").Run()
+	} else if _, err := exec.LookPath("update-ca-certificates"); err == nil {
+		_ = exec.Command("sudo", "update-ca-certificates").Run()
 	}
-	_, err := exec.LookPath("update-ca-certificates")
-	return err == nil
 }
 
 // installCertViaAnchors copies the CA into the distro's anchor directory and
@@ -233,6 +230,9 @@ func uninstallCertPlatform(certPath string) error {
 		"/etc/pki/ca-trust/source/anchors/snirect-root.pem",
 		"/etc/ca-certificates/trust-source/anchors/snirect-root.crt",
 		"/usr/share/pki/trust/anchors/snirect-root.pem",
+		// Legacy builds symlinked the anchor into /etc/ssl/certs directly;
+		// removing the anchor leaves this dangling.
+		"/etc/ssl/certs/snirect-root.pem",
 	}
 
 	removed := false
@@ -251,6 +251,9 @@ func uninstallCertPlatform(certPath string) error {
 		}
 	}
 
+	// Refresh every store whose update tool exists; systems can carry both
+	// layouts (e.g. p11-kit plus a Debian-style bundle), and each removal
+	// above only takes effect in the store it was refreshed from.
 	if path, err := exec.LookPath("update-ca-certificates"); err == nil {
 		logger.System().Info("updating CA certificates")
 		upCmd := exec.Command("sudo", path)
@@ -260,7 +263,8 @@ func uninstallCertPlatform(certPath string) error {
 			return fmt.Errorf("failed to update trust store: %v", err)
 		}
 		removed = true
-	} else if path, err := exec.LookPath("update-ca-trust"); err == nil {
+	}
+	if path, err := exec.LookPath("update-ca-trust"); err == nil {
 		logger.System().Info("updating CA trust store")
 		upCmd := exec.Command("sudo", path)
 		upCmd.Stdout = os.Stdout

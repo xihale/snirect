@@ -20,7 +20,8 @@ var certInstallCmd = &cobra.Command{
 	Long: `Install the root CA certificate to the system trust store.
 
 Platform details:
-  Linux:   update-ca-certificates (Debian/Ubuntu), trust/update-ca-trust (others); requires sudo
+  Linux:   trust (p11-kit) preferred; falls back to distro anchor dirs via
+           update-ca-trust / update-ca-certificates; requires sudo
   macOS:   security add-trusted-cert
   Windows: certutil -addstore (requires admin)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
