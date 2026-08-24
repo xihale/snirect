@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/xihale/snirect/cmd"
+	"github.com/xihale/snirect/internal/cli"
 )
 
 func main() {
-	cmd.Execute()
+	cli.Execute()
 }

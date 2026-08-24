@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xihale/snirect/cert"
-	"github.com/xihale/snirect/proxy"
+	"github.com/xihale/snirect/internal/cert"
+	"github.com/xihale/snirect/internal/proxy"
 )
 
 // EngineCallbacks is the gomobile interface the Kotlin side implements. The

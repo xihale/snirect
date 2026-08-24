@@ -4,7 +4,7 @@
 # --- Version & Metadata ---
 VERSION ?= $(shell bash scripts/git_version.sh 2>/dev/null || echo "0.0.0-dev")
 MODULE := github.com/xihale/snirect
-LDFLAGS := -s -w -X '$(MODULE)/cmd.Version=$(VERSION)'
+LDFLAGS := -s -w -X '$(MODULE)/internal/cli.Version=$(VERSION)'
 
 # --- Paths & Tooling ---
 BUILD_DIR := dist

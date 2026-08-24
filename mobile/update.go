@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/xihale/snirect/update"
+	"github.com/xihale/snirect/internal/update"
 )
 
 // UpdateInfo is the gomobile-facing subset of update.Info. Download/install

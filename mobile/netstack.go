@@ -45,9 +45,9 @@ import (
 	"sync"
 	"time"
 
-	coreconfig "github.com/xihale/snirect/config"
-	coredns "github.com/xihale/snirect/dns"
-	"github.com/xihale/snirect/rules"
+	coreconfig "github.com/xihale/snirect/internal/config"
+	coredns "github.com/xihale/snirect/internal/dns"
+	"github.com/xihale/snirect/internal/rules"
 
 	"github.com/miekg/dns"
 	"gvisor.dev/gvisor/pkg/buffer"

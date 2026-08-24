@@ -5,7 +5,7 @@
 - Linux / macOS：`~/.config/snirect/config.toml`
 - Windows：`%APPDATA%\snirect\config.toml`
 
-改完要重启进程。注释掉的项用编译期默认值。完整字段说明在仓库里的 [`config/config.toml`](../config/config.toml)。
+改完要重启进程。注释掉的项用编译期默认值。完整字段说明在仓库里的 `internal/config/defaults.go` 中的 `SampleConfigTOML`。
 
 ```toml
 check_hostname = true          # true / false / "strict" / 域名列表
@@ -33,7 +33,7 @@ loglevel = "info"
 
 ## 规则
 
-规则编在 `rules/builtin_rules.go`，启动时 `LoadRules()` 自动给 key 建索引，不要手维护并行切片。
+规则编在 `internal/rules/builtin_rules.go`，启动时 `LoadRules()` 自动给 key 建索引，不要手维护并行切片。
 
 | 表 | 作用 |
 | :--- | :--- |

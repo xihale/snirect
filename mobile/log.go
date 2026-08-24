@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xihale/snirect/logger"
+	"github.com/xihale/snirect/internal/logger"
 )
 
 type LogLevel int

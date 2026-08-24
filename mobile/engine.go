@@ -5,9 +5,9 @@ import (
 	"net"
 	"strings"
 
-	coreconfig "github.com/xihale/snirect/config"
-	coredns "github.com/xihale/snirect/dns"
-	ruleslib "github.com/xihale/snirect/rules"
+	coreconfig "github.com/xihale/snirect/internal/config"
+	coredns "github.com/xihale/snirect/internal/dns"
+	ruleslib "github.com/xihale/snirect/internal/rules"
 )
 
 // Config is the JSON-shaped engine configuration handed in from the Kotlin side

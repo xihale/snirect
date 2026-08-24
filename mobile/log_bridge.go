@@ -7,7 +7,7 @@ import (
 
 	"log/slog"
 
-	"github.com/xihale/snirect/logger"
+	"github.com/xihale/snirect/internal/logger"
 )
 
 // This file bridges snirect-core's slog logger into the Android UI. Before this
