@@ -71,6 +71,56 @@ func TestLoadRules_RealHostsPresent(t *testing.T) {
 	}
 }
 
+// TestLoadRules_GitHubUploadPin is the regression guard for HTTPS git pushes.
+// github.com 302s git-receive-pack POSTs to upload.github.com, which has no
+// public A record. Without an exact pin the host falls through to the
+// *github.com web-edge IP, whose empty-SNI default vhost answers Host:
+// upload.github.com with a 301 back to github.com — an unfixable bounce for
+// the client. The pin must route it to the git edge (codeload's IP) and keep
+// SNI stripped, exactly like codeload itself.
+func TestLoadRules_GitHubUploadPin(t *testing.T) {
+	r, err := LoadRules()
+	if err != nil {
+		t.Fatalf("LoadRules() error = %v", err)
+	}
+
+	if got, ok := r.GetHost("upload.github.com"); !ok || got != "20.205.243.165" {
+		t.Fatalf("GetHost(upload.github.com) = (%q, %v), want (20.205.243.165, true)", got, ok)
+	}
+	if got, ok := r.GetAlterHostname("upload.github.com"); !ok || got != "" {
+		t.Fatalf("GetAlterHostname(upload.github.com) = (%q, %v), want (\"\", true)", got, ok)
+	}
+}
+
+// TestLoadRules_GitHubEdgePins locks the remaining *.github.com vhosts that
+// bounce (301 → github.com) on the *github.com web edge's empty-SNI default
+// vhost, plus the GitHub Pages front. uploads serves release-asset uploads
+// (gh release upload); collector/alive are the browser beacon/websocket
+// hosts; github.io is Pages, previously uncovered (direct tunnel → blocked).
+// Each IP was validated live: vhost answers the Host on empty SNI and the
+// leaf cert (*.github.com / *.github.io) covers the hostname.
+func TestLoadRules_GitHubEdgePins(t *testing.T) {
+	r, err := LoadRules()
+	if err != nil {
+		t.Fatalf("LoadRules() error = %v", err)
+	}
+
+	cases := []struct{ host, ip string }{
+		{"uploads.github.com", "20.205.243.168"}, // API plane, shares api's pin
+		{"collector.github.com", "140.82.114.26"},
+		{"alive.github.com", "140.82.114.26"},
+		{"google.github.io", "185.199.108.153"}, // via *github.io
+	}
+	for _, tc := range cases {
+		if got, ok := r.GetHost(tc.host); !ok || got != tc.ip {
+			t.Errorf("GetHost(%s) = (%q, %v), want (%q, true)", tc.host, got, ok, tc.ip)
+		}
+		if got, ok := r.GetAlterHostname(tc.host); !ok || got != "" {
+			t.Errorf("GetAlterHostname(%s) = (%q, %v), want (\"\", true)", tc.host, got, ok)
+		}
+	}
+}
+
 // TestLoadRules_FrontedHostsHaveAllowlist is the regression guard for the
 // domain-fronting cases surfaced (and fixed) by `snirect doctor`. Each entry
 // below rewrites SNI to a front domain whose cert does NOT name the original
