@@ -74,6 +74,8 @@ jobs:
       - name: Build Android Release APKs
         run: |
           set -e
+          # 本线不跑 make release-cli, dist/ 不会自动创建。
+          mkdir -p dist
           # 依次产出 arm64 与 x86_64 (模拟器) 两个 release 包。
           # 换 ABI 前 gradle clean, 防止上一个架构的 libgojni.so 残留进 APK。
           # asset 文件名去掉 android- 前缀 (update.AssetName 依赖 snirect-android-<abi>-vX.Y.Z.apk 形状)。
