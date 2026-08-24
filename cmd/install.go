@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/xihale/snirect/app"
+	"github.com/xihale/snirect/service"
 	"github.com/spf13/cobra"
 )
 
@@ -16,7 +16,7 @@ var installCmd = &cobra.Command{
   macOS:   /usr/local/bin + launchd agent
   Windows: %LOCALAPPDATA%\Programs + Task Scheduler`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := app.Install(); err != nil {
+		if err := service.Install(); err != nil {
 			return err
 		}
 		fmt.Println("Installed successfully")

@@ -1,6 +1,6 @@
 //go:build darwin
 
-package app
+package service
 
 func getBinPath() string {
 	return "/usr/local/bin/snirect"

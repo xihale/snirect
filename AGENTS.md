@@ -12,7 +12,8 @@
 | :--- | :--- | :--- |
 | **`cmd/snirect/`** | 桌面端 CLI 命令行入口 (`snirect`)。 | `make build` / `go build` |
 | **`proxy/`** | HTTP/HTTPS 代理服务器、TLS 拦截与上游证书验证（含 `CertificateManager`/`Resolver` 接口与 `VerifyCert`）。 | 原生 Go |
-| **`app/`**, **`cert/`**, **`dns/`**, **`rules/`**, **`sysproxy/`** | 通用 Go 核心引擎逻辑（证书、DNS、规则与系统代理集成）。证书策略类型 (`CertPolicy`/`ParseCertPolicy`) 定义于 `rules/certpolicy.go`。 | 原生 Go |
+| **`service/`** | 桌面端服务生命周期管理（安装/卸载/系统服务，基于 kardianos/service）。 | 原生 Go |
+| **`cert/`**, **`dns/`**, **`rules/`**, **`sysproxy/`** | 通用 Go 核心引擎逻辑（证书、DNS、规则与系统代理集成）。证书策略类型 (`CertPolicy`/`ParseCertPolicy`) 定义于 `rules/certpolicy.go`。 | 原生 Go |
 | **`config/`** | 配置定义与加载器。默认配置与 PAC 模板直接以 Go 原生字符串编写于 `config/defaults.go`，无需外部 `.toml` 资源文件。 | 原生 Go |
 | **`color/`** | logger 与 CLI 共享的 ANSI 颜色/样式转义序列（含 `NO_COLOR` 检测）。 | 原生 Go |
 | **`logger/`** | 结构化日志 (`slog`) 分模块 logger。 | 原生 Go |

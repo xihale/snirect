@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/xihale/snirect/app"
+	"github.com/xihale/snirect/service"
 	"github.com/xihale/snirect/sysproxy"
 	"github.com/spf13/cobra"
 )
@@ -24,7 +24,7 @@ Platform details:
   macOS:   security add-trusted-cert
   Windows: certutil -addstore (requires admin)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := app.SetupCA(true); err != nil {
+		if err := service.SetupCA(true); err != nil {
 			return fmt.Errorf("install failed: %w\n\nTry running with sudo or admin privileges", err)
 		}
 		fmt.Println("Root CA installed successfully")

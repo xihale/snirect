@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
-	"github.com/xihale/snirect/app"
+	"github.com/xihale/snirect/service"
 	"github.com/xihale/snirect/color"
 	"github.com/xihale/snirect/config"
 	"github.com/xihale/snirect/rules"
@@ -97,7 +97,7 @@ func gatherStatus() statusView {
 	}
 
 	v.systemProxy = sysproxy.IsSystemProxySet()
-	v.svcInstalled, v.svcRunning, v.svcDetail = app.ServiceStatus()
+	v.svcInstalled, v.svcRunning, v.svcDetail = service.ServiceStatus()
 
 	// Port probe — the replacement for the deleted daemon control API. We only
 	// have a real answer for the HTTP-proxy listener; TUN mode (no TCP port)

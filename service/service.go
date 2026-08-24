@@ -1,8 +1,8 @@
-// Package app's service.go provides a unified, kardianos/service-backed service
+// Package service provides a unified, kardianos/service-backed service
 // manager that replaces the previous per-OS hand-written installers (systemd
 // unit, launchd plist, Windows scheduled task).
 //
-// Why kardianos/service:
+// Why kardianos/service (imported as kservice):
 //   - Windows previously used a logon scheduled task launching a console exe,
 //     which forced three console-hiding hacks (IsSilentLaunch, HideConsole,
 //     DisableColor). A real Windows Service (SCM) makes all of those obsolete.
@@ -11,12 +11,12 @@
 // The service runs the binary with no arguments: the bare `snirect` command
 // runs the proxy in the foreground, which is exactly what a managed service
 // should supervise.
-package app
+package service
 
 import (
 	"fmt"
 
-	"github.com/kardianos/service"
+	kservice "github.com/kardianos/service"
 	"github.com/xihale/snirect/logger"
 )
 
@@ -24,8 +24,8 @@ import (
 const ServiceName = "snirect"
 
 // serviceConfig builds the kardianos Config for the installed binary.
-func serviceConfig(binPath string) *service.Config {
-	return &service.Config{
+func serviceConfig(binPath string) *kservice.Config {
+	return &kservice.Config{
 		Name:        ServiceName,
 		DisplayName: "Snirect",
 		Description: "Snirect - SNI RST bypass proxy",
@@ -34,7 +34,7 @@ func serviceConfig(binPath string) *service.Config {
 		//   Linux:   systemd user unit (~/.config/systemd/user)
 		//   macOS:   launchd LaunchAgent
 		//   Windows: Windows Service (SCM)
-		Option: service.KeyValue{
+		Option: kservice.KeyValue{
 			// Linux: user-scoped service (matches the old ~/.config/systemd/user
 			// path) so install needs no root. Windows/macOS ignore this key.
 			"UserService": true,
@@ -44,7 +44,7 @@ func serviceConfig(binPath string) *service.Config {
 
 // InstallService registers and starts the OS service for the given binary.
 func InstallService(binPath string) error {
-	s, err := service.New(serviceProgram{}, serviceConfig(binPath))
+	s, err := kservice.New(serviceProgram{}, serviceConfig(binPath))
 	if err != nil {
 		return fmt.Errorf("build service config: %w", err)
 	}
@@ -64,9 +64,9 @@ func InstallService(binPath string) error {
 	return nil
 }
 
-// UninstallService stops and removes the OS service.
+// UninstallService stops and removes the OS kservice.
 func UninstallService() error {
-	s, err := service.New(serviceProgram{}, serviceConfig(""))
+	s, err := kservice.New(serviceProgram{}, serviceConfig(""))
 	if err != nil {
 		return fmt.Errorf("build service config: %w", err)
 	}
@@ -80,10 +80,10 @@ func UninstallService() error {
 	return nil
 }
 
-// StopService stops the installed OS service. It is a no-op-shaped error if
+// StopService stops the installed OS kservice. It is a no-op-shaped error if
 // the service is not installed; callers should check ServiceStatus first.
 func StopService() error {
-	s, err := service.New(serviceProgram{}, serviceConfig(getBinPath()))
+	s, err := kservice.New(serviceProgram{}, serviceConfig(getBinPath()))
 	if err != nil {
 		return fmt.Errorf("build service config: %w", err)
 	}
@@ -93,9 +93,9 @@ func StopService() error {
 	return nil
 }
 
-// StartService starts the installed OS service.
+// StartService starts the installed OS kservice.
 func StartService() error {
-	s, err := service.New(serviceProgram{}, serviceConfig(getBinPath()))
+	s, err := kservice.New(serviceProgram{}, serviceConfig(getBinPath()))
 	if err != nil {
 		return fmt.Errorf("build service config: %w", err)
 	}
@@ -109,7 +109,7 @@ func StartService() error {
 // reusing the existing sysproxy.ServiceState shape so status plumbing is
 // unchanged.
 func ServiceStatus() (installed, running bool, detail string) {
-	s, err := service.New(serviceProgram{}, serviceConfig(""))
+	s, err := kservice.New(serviceProgram{}, serviceConfig(""))
 	if err != nil {
 		return false, false, err.Error()
 	}
@@ -119,20 +119,20 @@ func ServiceStatus() (installed, running bool, detail string) {
 		return false, false, ""
 	}
 	switch st {
-	case service.StatusRunning:
+	case kservice.StatusRunning:
 		return true, true, "running"
-	case service.StatusStopped:
+	case kservice.StatusStopped:
 		return true, false, "stopped"
 	default:
 		return true, false, "unknown"
 	}
 }
 
-// serviceProgram implements service.Interface. It is a placeholder: install/
+// serviceProgram implements kservice.Interface. It is a placeholder: install/
 // uninstall/status only need a type that satisfies the interface; the actual
 // proxy lifecycle is managed by the process the service supervisor launches
 // (the bare `snirect` binary), not by Start/Stop callbacks.
 type serviceProgram struct{}
 
-func (p serviceProgram) Start(s service.Service) error { return nil }
-func (p serviceProgram) Stop(s service.Service) error  { return nil }
+func (p serviceProgram) Start(s kservice.Service) error { return nil }
+func (p serviceProgram) Stop(s kservice.Service) error  { return nil }

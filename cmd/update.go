@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/xihale/snirect/app"
+	"github.com/xihale/snirect/service"
 	"github.com/xihale/snirect/update"
 )
 
@@ -78,31 +78,31 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println("sha256 ok")
 
-	installed, running, _ := app.ServiceStatus()
+	installed, running, _ := service.ServiceStatus()
 	if running {
 		fmt.Println("stopping service...")
-		if err := app.StopService(); err != nil {
+		if err := service.StopService(); err != nil {
 			return err
 		}
 	}
 
-	fmt.Printf("installing to %s...\n", app.BinPath())
-	if err := app.ReplaceBinary(tmp); err != nil {
+	fmt.Printf("installing to %s...\n", service.BinPath())
+	if err := service.ReplaceBinary(tmp); err != nil {
 		if running {
-			_ = app.StartService()
+			_ = service.StartService()
 		}
 		return err
 	}
 
 	if installed {
 		fmt.Println("starting service...")
-		if err := app.StartService(); err != nil {
+		if err := service.StartService(); err != nil {
 			return fmt.Errorf("installed %s but failed to start service: %w", info.Latest, err)
 		}
 	}
 
 	fmt.Printf("updated to %s\n", info.Latest)
-	if sameExecutable(app.BinPath()) {
+	if sameExecutable(service.BinPath()) {
 		fmt.Println("this process is still the old binary; restart it")
 	} else if !installed {
 		fmt.Println("service not registered; run 'snirect install' to add it")
