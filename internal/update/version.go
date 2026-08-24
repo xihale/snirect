@@ -10,11 +10,13 @@ type ver struct {
 }
 
 // parseVer takes a git-describe or release tag ("v1.5.0", "1.5.0-12-gabc",
-// "0.0.0-dev") and returns the leading major.minor.patch. Extra pre-release
-// / describe suffixes are ignored so a build sitting on v1.5.0-12-gabc is
+// "android-v1.5.0-3-gabc", "0.0.0-dev") and returns the leading
+// major.minor.patch. Extra pre-release / describe suffixes and the android
+// line's tag prefix are ignored so a build sitting on v1.5.0-12-gabc is
 // treated as 1.5.0, not as older than v1.5.0.
 func parseVer(s string) (ver, bool) {
 	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "android-v")
 	s = strings.TrimPrefix(s, "v")
 	s = strings.TrimPrefix(s, "V")
 	if s == "" {

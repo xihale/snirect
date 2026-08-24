@@ -105,7 +105,7 @@ make crossAll # 交叉编译 linux/darwin/windows × amd64/arm64 共 6 个平台
 make debug    # Android Debug 构建
 ```
 
-发布流程是 git tag + GitHub Actions，见 [docs/build.md](docs/build.md)。
+发布流程是 git tag + GitHub Actions（CLI 走 `v*`，Android 走 `android-v*`，两条线独立发版），见 [docs/build.md](docs/build.md)。
 
 ## 致谢
 

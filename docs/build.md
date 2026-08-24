@@ -33,9 +33,12 @@ Debug 包 applicationId 带 `.debug` 后缀，可与 Release 共存。签名配�
 
 ## 发布
 
-发布只走 **git tag + GitHub Actions**。推送 `v*`（例如 `v1.5.0`）后：
+发布只走 **git tag + GitHub Actions**，CLI 与 Android 两条线各自独立发版：
 
-- [release.yml](../.github/workflows/release.yml)：交叉编译 6 个平台二进制、UPX 压缩、生成 SHA256 校验和、构建 Android APK（arm64 + x86_64），全部挂到 [Releases](https://github.com/xihale/snirect/releases)
+- CLI：推送 `v*`（例如 `v1.5.0`）→ [release-cli.yml](../.github/workflows/release-cli.yml)：交叉编译 6 个平台二进制、UPX 压缩、生成 SHA256 校验和，挂到 Releases，并同步 AUR（`snirect` / `snirect-bin`）
+- Android：推送 `android-v*`（例如 `android-v0.4.0`）→ [release-android.yml](../.github/workflows/release-android.yml)：构建签名 APK（arm64 + x86_64）挂到 Releases
 - [ci.yml](../.github/workflows/ci.yml)：非 tag 推送与 PR 跑 lint + 单元测试
+
+版本号各自从本系列的 tag 推导（`scripts/git_version.sh 'v*'` / `'android-v*'`），互不影响。两端的更新检查按 tag 前缀各取各的最新 Release。
 
 已安装用户可用 `snirect update` 自更新，下载后校验 SHA256 再覆盖。

@@ -43,16 +43,28 @@ type ghRelease struct {
 	} `json:"assets"`
 }
 
-// Check fetches the latest GitHub release and compares it to current.
-// goos/goarch select the desktop asset name (ignored for a missing asset:
-// Check still succeeds so Android can report "newer" without a matching APK
-// field). Draft and prerelease tags are skipped.
+// releaseTagPrefix is the tag line goos releases from. CLI and Android ship
+// independently from the same repo: v* for desktop, android-v* for the app,
+// so the two lines never force a joint release.
+func releaseTagPrefix(goos string) string {
+	if goos == "android" {
+		return "android-v"
+	}
+	return "v"
+}
+
+// Check fetches the newest GitHub release of the caller's line (v* for CLI,
+// android-v* for the app — /releases/latest would return whichever line
+// published most recently) and compares it to current. goos/goarch select
+// the desktop asset name (ignored for a missing asset: Check still succeeds
+// so Android can report "newer" without a matching APK field). Draft and
+// prerelease tags are skipped.
 func (c *Client) Check(ctx context.Context, current, goos, goarch string) (*Info, error) {
 	if c.APIBase == "" {
 		c.APIBase = defaultAPIBase
 	}
 	ua := "snirect/" + current + " (+https://github.com/" + repoOwner + "/" + repoName + ")"
-	url := strings.TrimRight(c.APIBase, "/") + "/repos/" + repoOwner + "/" + repoName + "/releases/latest"
+	url := strings.TrimRight(c.APIBase, "/") + "/repos/" + repoOwner + "/" + repoName + "/releases?per_page=30"
 	resp, err := c.get(ctx, url, ua)
 	if err != nil {
 		return nil, fmt.Errorf("check update: %w", err)
@@ -69,19 +81,38 @@ func (c *Client) Check(ctx context.Context, current, goos, goarch string) (*Info
 		}
 		return nil, fmt.Errorf("github releases: %s", msg)
 	}
-	var rel ghRelease
-	if err := json.Unmarshal(body, &rel); err != nil {
-		return nil, fmt.Errorf("check update: parse release: %w", err)
+	var rels []ghRelease
+	if err := json.Unmarshal(body, &rels); err != nil {
+		return nil, fmt.Errorf("check update: parse releases: %w", err)
 	}
-	if rel.Draft || rel.Prerelease || rel.TagName == "" {
-		return nil, fmt.Errorf("no stable release published")
+	prefix := releaseTagPrefix(goos)
+	var rel *ghRelease
+	for i := range rels {
+		r := &rels[i]
+		if r.Draft || r.Prerelease || r.TagName == "" {
+			continue
+		}
+		if strings.HasPrefix(r.TagName, prefix) {
+			rel = r
+			break
+		}
+	}
+	if rel == nil {
+		return nil, fmt.Errorf("no stable release published for this line (%s*)", prefix)
 	}
 
-	assetName := AssetName(goos, goarch, rel.TagName)
+	// Report the app line as v1.5.0 (drop the android- discriminator) so the
+	// version shown to the user matches the installed versionName.
+	tag := rel.TagName
+	if goos == "android" {
+		tag = strings.TrimPrefix(tag, "android-")
+	}
+
+	assetName := AssetName(goos, goarch, tag)
 	info := &Info{
 		Current:   current,
-		Latest:    rel.TagName,
-		Newer:     Newer(rel.TagName, current),
+		Latest:    tag,
+		Newer:     Newer(tag, current),
 		URL:       rel.HTMLURL,
 		Notes:     rel.Body,
 		AssetName: assetName,
@@ -103,7 +134,7 @@ func Check(ctx context.Context, current, goos, goarch string) (*Info, error) {
 }
 
 // androidABI maps a Go arch to the Android ABI segment of release asset
-// names (release.yml builds arm64 and x86_64 APKs).
+// names (release-android.yml builds arm64 and x86_64 APKs).
 var androidABI = map[string]string{
 	"arm64": "arm64",
 	"amd64": "x86_64",
@@ -111,11 +142,13 @@ var androidABI = map[string]string{
 }
 
 // AssetName is the release filename for a GOOS/GOARCH pair, matching
-// Makefile crossAll / release.yml. Unknown Android arches get "" — Check
+// Makefile crossAll / release-android.yml. Android tags carry an android-
+// prefix that the asset name drops. Unknown Android arches get "" — Check
 // then reports Newer without a downloadable asset.
 func AssetName(goos, goarch, tag string) string {
 	if goos == "android" {
 		if abi := androidABI[goarch]; abi != "" {
+			tag = strings.TrimPrefix(tag, "android-")
 			return "snirect-android-" + abi + "-" + tag + ".apk"
 		}
 		return ""

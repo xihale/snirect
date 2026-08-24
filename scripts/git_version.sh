@@ -1,9 +1,15 @@
 #!/bin/bash
 # versionName = <tag>[-<n>-g<hash>][-dirty]
 # versionCode is git rev-list --count HEAD (see android/app/build.gradle).
+#
+# 第一个参数是 tag 匹配模式 (git describe --match): CLI 用 "v*", Android 用
+# "android-v*"。两条发版线共用同一仓库, 不带 --match 会挑到任意系列的最近
+# tag, 版本号互相污染。
+
+PATTERN="${1:-v*}"
 
 # 1. Find the closest tag
-TAG=$(git describe --tags --abbrev=0 2>/dev/null)
+TAG=$(git describe --tags --abbrev=0 --match "$PATTERN" 2>/dev/null)
 
 if [ -z "$TAG" ]; then
     TAG="0.0.0"

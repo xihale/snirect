@@ -17,13 +17,15 @@ def getGitVersionCode(project) {
     }
 }
 
-// 动态从 Git Tag 获取版本名
+// 动态从 Git Tag 获取版本名。Android 走独立的 android-v* tag 系列 (CLI 用 v*),
+// 展示时剥掉 android- 前缀, versionName 仍是 v0.4.0 样式。
 def getGitVersionName(project) {
     try {
-        return project.providers.exec {
+        def out = project.providers.exec {
             workingDir project.rootProject.projectDir.parentFile
-            commandLine 'bash', 'scripts/git_version.sh'
+            commandLine 'bash', 'scripts/git_version.sh', 'android-v*'
         }.standardOutput.asText.get().trim()
+        return out.replaceFirst(/^android-/, '')
     } catch (Exception e) {
         return "0.0.0-fallback"
     }

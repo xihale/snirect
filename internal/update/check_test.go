@@ -30,6 +30,11 @@ func TestNewer(t *testing.T) {
 		{"", "v1.0.0", false},
 		{"v1.0.0", "", true},
 		{"v1.0.0-beta", "0.9.0", true},
+		// android-v* line compares by the same major.minor.patch.
+		{"android-v1.6.0", "v1.5.0", true},
+		{"android-v1.5.0", "v1.5.0", false},
+		{"android-v1.5.0", "android-v1.5.0-4-gabc", false},
+		{"android-v1.4.9", "v1.5.0", false},
 	}
 	for _, tc := range cases {
 		got := Newer(tc.latest, tc.current)
@@ -52,6 +57,9 @@ func TestAssetName(t *testing.T) {
 		{"android", "amd64", "v1.5.0", "snirect-android-x86_64-v1.5.0.apk"},
 		{"android", "386", "v1.5.0", "snirect-android-x86-v1.5.0.apk"},
 		{"android", "wasm", "v1.5.0", ""},
+		// android line tags carry the android- prefix; asset names drop it.
+		{"android", "arm64", "android-v1.6.0", "snirect-android-arm64-v1.6.0.apk"},
+		{"android", "amd64", "android-v1.6.0", "snirect-android-x86_64-v1.6.0.apk"},
 	}
 	for _, tc := range cases {
 		got := AssetName(tc.goos, tc.goarch, tc.tag)
@@ -84,19 +92,22 @@ func TestCheckAndDownload(t *testing.T) {
 	hexSum := hex.EncodeToString(sum[:])
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/repos/xihale/snirect/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+	// The two release lines (android-v* newest first) share one list; each
+	// platform must pick its own line, skipping prereleases and drafts.
+	mux.HandleFunc("/repos/xihale/snirect/releases", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("User-Agent") == "" {
 			t.Error("missing User-Agent")
 		}
-		fmt.Fprintf(w, `{
-			"tag_name": "v1.5.0",
-			"html_url": "http://example/releases/v1.5.0",
-			"body": "notes",
-			"assets": [
+		fmt.Fprintf(w, `[
+			{"tag_name": "android-v1.6.0", "html_url": "http://example/releases/android-v1.6.0", "body": "app notes",
+			 "assets": [{"name": "snirect-android-arm64-v1.6.0.apk", "browser_download_url": "http://%s/snirect-android-arm64-v1.6.0.apk"}]},
+			{"tag_name": "v1.9.0", "prerelease": true},
+			{"tag_name": "v1.5.0", "html_url": "http://example/releases/v1.5.0", "body": "notes",
+			 "assets": [
 				{"name": "snirect-linux-amd64", "browser_download_url": "http://%s/snirect-linux-amd64"},
 				{"name": "checksums.txt", "browser_download_url": "http://%s/checksums.txt"}
-			]
-		}`, r.Host, r.Host)
+			 ]}
+		]`, r.Host, r.Host, r.Host)
 	})
 	mux.HandleFunc("/checksums.txt", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "%s  snirect-linux-amd64\n", hexSum)
@@ -113,18 +124,22 @@ func TestCheckAndDownload(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !info.Newer || info.Latest != "v1.5.0" || info.AssetName != "snirect-linux-amd64" {
-		t.Fatalf("unexpected info: %+v", info)
+		t.Fatalf("cli check must pick the v* line, not android-v*: %+v", info)
 	}
 	if info.AssetURL == "" || info.ChecksumsURL == "" {
 		t.Fatalf("missing asset urls: %+v", info)
 	}
 
-	android, err := c.Check(context.Background(), "0.0.0-dev", "android", "arm64")
+	// An install from before the split reports its old shared-tag version.
+	android, err := c.Check(context.Background(), "v1.5.0", "android", "arm64")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !android.Newer || android.AssetURL != "" {
-		t.Fatalf("android check should report newer without a matching apk in this fixture: %+v", android)
+	if !android.Newer || android.Latest != "v1.6.0" {
+		t.Fatalf("android check must pick the android-v* line: %+v", android)
+	}
+	if android.AssetName != "snirect-android-arm64-v1.6.0.apk" || android.AssetURL == "" {
+		t.Fatalf("android apk asset mismatch: %+v", android)
 	}
 
 	dest := filepath.Join(t.TempDir(), "snirect")
@@ -169,11 +184,11 @@ func TestDownloadRejectsBadHash(t *testing.T) {
 
 func TestCheckSkipsDraft(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"tag_name":"v1.0.0","draft":true}`)
+		io.WriteString(w, `[{"tag_name":"v1.0.0","draft":true},{"tag_name":"android-v2.0.0"}]`)
 	}))
 	defer srv.Close()
 	c := &Client{APIBase: srv.URL, Do: srv.Client().Do}
 	if _, err := c.Check(context.Background(), "0.0.0", "linux", "amd64"); err == nil {
-		t.Fatal("expected error for draft")
+		t.Fatal("expected error: only a draft v* release exists")
 	}
 }
