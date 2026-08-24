@@ -264,14 +264,8 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 			// Offer the upstream exactly the protocols the client offered, so
 			// the upstream's choice is necessarily something the client can
-			// also speak. If the client offered nothing, pin http/1.1.
-			// Site hooks may pin their own offer (they parse H1 themselves).
-			offer := upstreamOffer(hello.SupportedProtos)
-			if hook := tunnelHookFor(host, clientSNI); hook != nil {
-				if pinned := hook.pinALPN(); len(pinned) > 0 {
-					offer = pinned
-				}
-			}
+			// also speak. Site hooks may pin their own offer.
+			offer := upstreamALPNOffer(hello.SupportedProtos, host, clientSNI)
 			rc, err := s.connectToRemote(r.Context(), host, port, r.RemoteAddr, targetSNI, offer)
 			if err != nil {
 				return nil, err // connectToRemote already logged (DNS/dial/handshake)

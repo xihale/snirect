@@ -47,6 +47,32 @@ func TestHookRoutingParityWithLegacyPredicate(t *testing.T) {
 	}
 }
 
+// TestUpstreamALPNOffer exercises the exact function handleTLS feeds into
+// connectToRemote: hooks pin http/1.1 for GitHub hosts, everything else
+// mirrors the client's offer (h2-capable clients keep negotiating h2).
+func TestUpstreamALPNOffer(t *testing.T) {
+	h2Client := []string{"h2", "http/1.1"}
+	cases := []struct {
+		name      string
+		protos    []string
+		host, sni string
+		want      []string
+	}{
+		{"github pins h1 despite h2 client", h2Client, "github.com", "github.com", []string{"http/1.1"}},
+		{"github via sni only", h2Client, "example.com", "codeload.github.com", []string{"http/1.1"}},
+		{"non-hook mirrors client", h2Client, "example.com", "example.com", h2Client},
+		{"hook with silent client", nil, "github.com", "", []string{"http/1.1"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := upstreamALPNOffer(c.protos, c.host, c.sni)
+			if len(got) != len(c.want) || (len(got) > 0 && got[0] != c.want[0]) {
+				t.Errorf("upstreamALPNOffer(%v, %q, %q) = %v, want %v", c.protos, c.host, c.sni, got, c.want)
+			}
+		})
+	}
+}
+
 func TestGithubHookContract(t *testing.T) {
 	h := tunnelHookFor("github.com", "")
 	if h == nil {

@@ -71,9 +71,11 @@ func internableRedirect(location string) (host, path string, ok bool) {
 // intern-followed before the client ever sees them.
 type githubHook struct{}
 
-func (githubHook) match(host, sni string) bool { return isGitHubHTTPHost(host) || isGitHubHTTPHost(sni) }
-func (githubHook) pinALPN() []string           { return []string{"http/1.1"} }
-func (githubHook) interceptsH1() bool          { return true }
+func (githubHook) match(host, sni string) bool {
+	return isGitHubHTTPHost(host) || isGitHubHTTPHost(sni)
+}
+func (githubHook) pinALPN() []string  { return []string{"http/1.1"} }
+func (githubHook) interceptsH1() bool { return true }
 
 func (githubHook) serveH1(s *ProxyServer, client, remote net.Conn, host, clientAddr string, ctx context.Context) {
 	s.serveGitHubH1(client, remote, host, clientAddr, ctx)

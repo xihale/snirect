@@ -42,3 +42,16 @@ func tunnelHookFor(host, sni string) tunnelHook {
 	}
 	return nil
 }
+
+// upstreamALPNOffer is the single production decision for what ALPN list
+// goes on the wire to the upstream: mirror the client's offer, unless a
+// site hook pins its own (it parses H1 itself, so it must not get h2).
+func upstreamALPNOffer(clientProtos []string, host, sni string) []string {
+	offer := upstreamOffer(clientProtos)
+	if hook := tunnelHookFor(host, sni); hook != nil {
+		if pinned := hook.pinALPN(); len(pinned) > 0 {
+			offer = pinned
+		}
+	}
+	return offer
+}
