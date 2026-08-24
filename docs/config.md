@@ -9,7 +9,7 @@
 
 ```toml
 check_hostname = true          # true / false / "strict" / 域名列表
-set_proxy = true
+set_proxy = false              # 默认关，不自动改系统代理
 ca_install = "auto"            # auto / always / never
 ipv6 = false                   # 默认关，避免不可达的 v6
 

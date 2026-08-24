@@ -28,7 +28,7 @@ const SampleConfigTOML = `# Snirect Configuration File
 #
 # 自动设置系统代理
 # 启动时自动将 Snirect 设置为系统代理。
-# set_proxy = true
+# set_proxy = false
 
 # [Root CA Installation]
 # Policy for automatically importing and trusting the Snirect Root CA.
@@ -378,7 +378,7 @@ function FindProxyForURL(url, host) {
 // PreparsedDefaultConfig contains the compile-time parsed default configuration.
 var PreparsedDefaultConfig = Config{
 	CheckHostname: true,
-	SetProxy:      true,
+	SetProxy:      false,
 	CAInstall:     "auto",
 	IPv6:          false,
 	DNS: DNSConfig{
