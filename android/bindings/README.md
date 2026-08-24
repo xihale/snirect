@@ -1,6 +1,6 @@
-# Snirect Mobile Core (Go Gomobile 绑定层)
+# Snirect Android Bindings (Go Gomobile 绑定层)
 
-`mobile` 是 Snirect 面向 Android 系统的 Go 语言胶水模块。它通过 [gomobile](https://pkg.go.dev/golang.org/x/mobile/cmd/gomobile) 编译生成 `core.aar`，将平台无关的 Go 核心代理能力与 Android 系统的 `VpnService`（TUN 虚拟网卡）对接。
+`android/bindings` 是 Snirect 面向 Android 系统的 Go 语言胶水模块。它通过 [gomobile](https://pkg.go.dev/golang.org/x/mobile/cmd/gomobile) 编译生成 `core.aar`，将平台无关的 Go 核心代理能力与 Android 系统的 `VpnService`（TUN 虚拟网卡）对接。
 
 ---
 

@@ -10,7 +10,7 @@ LDFLAGS := -s -w -X '$(MODULE)/internal/cli.Version=$(VERSION)'
 BUILD_DIR := dist
 BINARY_NAME := snirect
 CMD_PATH := ./cmd/snirect
-MOBILE_PKG := ./mobile
+MOBILE_PKG := ./android/bindings
 ANDROID_DIR := android
 CORE_AAR := $(ANDROID_DIR)/app/libs/core.aar
 
