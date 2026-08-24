@@ -27,6 +27,26 @@ func TestTunnelHookForNonMatchingHosts(t *testing.T) {
 	}
 }
 
+// TestHookRoutingParityWithLegacyPredicate pins the refactor guarantee:
+// wherever the old inline `isGitHubHTTPHost(clientSNI) || isGitHubHTTPHost(host)`
+// branch fired, the registry must route through a hook today, and nowhere else.
+func TestHookRoutingParityWithLegacyPredicate(t *testing.T) {
+	hosts := []string{
+		"github.com", "www.github.com", "codeload.github.com",
+		"GitHub.COM", // case-insensitive in both paths
+		"api.github.com", "notgithub.com", "github.com.evil.io", "example.com", "",
+	}
+	for _, host := range hosts {
+		for _, sni := range []string{host, "", "www.github.com"} {
+			legacy := isGitHubHTTPHost(host) || isGitHubHTTPHost(sni)
+			got := tunnelHookFor(host, sni) != nil
+			if legacy != got {
+				t.Errorf("host=%q sni=%q: legacy=%v, hook routed=%v", host, sni, legacy, got)
+			}
+		}
+	}
+}
+
 func TestGithubHookContract(t *testing.T) {
 	h := tunnelHookFor("github.com", "")
 	if h == nil {
