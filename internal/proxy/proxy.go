@@ -265,10 +265,12 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 			// Offer the upstream exactly the protocols the client offered, so
 			// the upstream's choice is necessarily something the client can
 			// also speak. If the client offered nothing, pin http/1.1.
-			// GitHub archive intern-follow parses HTTP/1.1, so pin it there.
+			// Site hooks may pin their own offer (they parse H1 themselves).
 			offer := upstreamOffer(hello.SupportedProtos)
-			if isGitHubHTTPHost(clientSNI) || isGitHubHTTPHost(host) {
-				offer = []string{"http/1.1"}
+			if hook := tunnelHookFor(host, clientSNI); hook != nil {
+				if pinned := hook.pinALPN(); len(pinned) > 0 {
+					offer = pinned
+				}
 			}
 			rc, err := s.connectToRemote(r.Context(), host, port, r.RemoteAddr, targetSNI, offer)
 			if err != nil {
@@ -327,15 +329,16 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 6. GitHub archive/codeload: intern-follow the 302 so the client never
-	// hits the broken dedicated-vhost 301→404. Other MITM hosts stay a pipe.
+	// 6. Site hooks (e.g. GitHub archive/codeload): serve the tunnel through
+	// their H1 intercept loop so the client never hits broken redirects.
+	// Everything else stays a plain pipe.
 	logger.Upstream().Debug("tls tunnel established", "host", host, "alpn", remoteConn.ConnectionState().NegotiatedProtocol)
 	clientSNI := tlsClientConn.ConnectionState().ServerName
 	if clientSNI == "" {
 		clientSNI = host
 	}
-	if isGitHubHTTPHost(clientSNI) || isGitHubHTTPHost(host) {
-		s.serveGitHubH1(tlsClientConn, remoteConn, clientSNI, r.RemoteAddr, r.Context())
+	if hook := tunnelHookFor(host, clientSNI); hook != nil && hook.interceptsH1() {
+		hook.serveH1(s, tlsClientConn, remoteConn, clientSNI, r.RemoteAddr, r.Context())
 		return
 	}
 	s.tunnel(tlsClientConn, remoteConn)
