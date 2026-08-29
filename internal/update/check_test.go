@@ -192,3 +192,38 @@ func TestCheckSkipsDraft(t *testing.T) {
 		t.Fatal("expected error: only a draft v* release exists")
 	}
 }
+
+func TestCheckPagesUntilLineMatch(t *testing.T) {
+	var pages []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/xihale/snirect/releases", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("per_page"); got != "5" {
+			t.Errorf("per_page = %q, want 5", got)
+		}
+		pages = append(pages, r.URL.Query().Get("page"))
+		switch r.URL.Query().Get("page") {
+		case "1":
+			// A full page of only the other line forces the second request.
+			io.WriteString(w, `[
+				{"tag_name":"android-v1.6.4"},{"tag_name":"android-v1.6.3"},
+				{"tag_name":"android-v1.6.2"},{"tag_name":"android-v1.6.1"},
+				{"tag_name":"android-v1.6.0"}]`)
+		default:
+			io.WriteString(w, `[{"tag_name":"v1.6.0","html_url":"http://example/releases/v1.6.0","body":"notes"}]`)
+		}
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	c := &Client{APIBase: srv.URL, Do: srv.Client().Do}
+	info, err := c.Check(context.Background(), "v1.5.0", "linux", "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Newer || info.Latest != "v1.6.0" {
+		t.Fatalf("paged check must find the v* release on page 2: %+v", info)
+	}
+	if strings.Join(pages, ",") != "1,2" {
+		t.Fatalf("requested pages = [%s], want 1,2 — must stop once the line is found", strings.Join(pages, ","))
+	}
+}

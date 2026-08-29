@@ -13,10 +13,14 @@ import (
 )
 
 const (
-	repoOwner     = "xihale"
-	repoName      = "snirect"
-	maxBody       = 8 << 20   // 8 MiB for JSON / checksums
-	maxAssetBytes = 200 << 20 // 200 MiB for a release binary
+	repoOwner       = "xihale"
+	repoName        = "snirect"
+	maxBody         = 8 << 20   // 8 MiB for JSON / checksums
+	maxAssetBytes   = 200 << 20 // 200 MiB for a release binary
+	releasesPerPage = 5         // releases fetched per /releases page
+	// Same window the old single per_page=30 fetch covered; reaching it
+	// means the caller's line has no stable release among the recent 30.
+	maxReleaseScans = 30
 )
 
 // Info is the result of checking GitHub Releases for a newer build.
@@ -58,44 +62,17 @@ func releaseTagPrefix(goos string) string {
 // published most recently) and compares it to current. goos/goarch select
 // the desktop asset name (ignored for a missing asset: Check still succeeds
 // so Android can report "newer" without a matching APK field). Draft and
-// prerelease tags are skipped.
+// prerelease tags are skipped. The listing is paged in releasesPerPage-sized
+// chunks so the common case stays a small single request.
 func (c *Client) Check(ctx context.Context, current, goos, goarch string) (*Info, error) {
 	if c.APIBase == "" {
 		c.APIBase = defaultAPIBase
 	}
 	ua := "snirect/" + current + " (+https://github.com/" + repoOwner + "/" + repoName + ")"
-	url := strings.TrimRight(c.APIBase, "/") + "/repos/" + repoOwner + "/" + repoName + "/releases?per_page=30"
-	resp, err := c.get(ctx, url, ua)
-	if err != nil {
-		return nil, fmt.Errorf("check update: %w", err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
-	if err != nil {
-		return nil, fmt.Errorf("check update: read body: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		msg := strings.TrimSpace(string(body))
-		if msg == "" {
-			msg = resp.Status
-		}
-		return nil, fmt.Errorf("github releases: %s", msg)
-	}
-	var rels []ghRelease
-	if err := json.Unmarshal(body, &rels); err != nil {
-		return nil, fmt.Errorf("check update: parse releases: %w", err)
-	}
 	prefix := releaseTagPrefix(goos)
-	var rel *ghRelease
-	for i := range rels {
-		r := &rels[i]
-		if r.Draft || r.Prerelease || r.TagName == "" {
-			continue
-		}
-		if strings.HasPrefix(r.TagName, prefix) {
-			rel = r
-			break
-		}
+	rel, err := c.findRelease(ctx, ua, prefix)
+	if err != nil {
+		return nil, err
 	}
 	if rel == nil {
 		return nil, fmt.Errorf("no stable release published for this line (%s*)", prefix)
@@ -126,6 +103,51 @@ func (c *Client) Check(ctx context.Context, current, goos, goarch string) (*Info
 		}
 	}
 	return info, nil
+}
+
+// findRelease returns the newest stable release whose tag carries prefix.
+// The two release lines interleave in one /releases listing, so the page
+// head may hold none of the caller's line: fetch pages of releasesPerPage
+// until a match, the end of the list, or the maxReleaseScans window.
+func (c *Client) findRelease(ctx context.Context, ua, prefix string) (*ghRelease, error) {
+	apiBase := strings.TrimRight(c.APIBase, "/")
+	for page := 1; page*releasesPerPage <= maxReleaseScans; page++ {
+		url := fmt.Sprintf("%s/repos/%s/%s/releases?per_page=%d&page=%d",
+			apiBase, repoOwner, repoName, releasesPerPage, page)
+		resp, err := c.get(ctx, url, ua)
+		if err != nil {
+			return nil, fmt.Errorf("check update: %w", err)
+		}
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("check update: read body: %w", readErr)
+		}
+		if resp.StatusCode != http.StatusOK {
+			msg := strings.TrimSpace(string(body))
+			if msg == "" {
+				msg = resp.Status
+			}
+			return nil, fmt.Errorf("github releases: %s", msg)
+		}
+		var rels []ghRelease
+		if err := json.Unmarshal(body, &rels); err != nil {
+			return nil, fmt.Errorf("check update: parse releases: %w", err)
+		}
+		for i := range rels {
+			r := &rels[i]
+			if r.Draft || r.Prerelease || r.TagName == "" {
+				continue
+			}
+			if strings.HasPrefix(r.TagName, prefix) {
+				return r, nil
+			}
+		}
+		if len(rels) < releasesPerPage {
+			break // short page: end of the list
+		}
+	}
+	return nil, nil
 }
 
 // Check is a convenience wrapper around New().Check.

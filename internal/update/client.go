@@ -108,5 +108,7 @@ func (c *Client) get(ctx context.Context, rawURL, userAgent string) (*http.Respo
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/vnd.github+json")
+	// Pin the REST API shape; asset hosts ignore it.
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	return c.roundTrip(req)
 }
