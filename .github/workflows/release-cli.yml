@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      upx:
+        description: "UPX 压缩发布二进制（默认关）"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -30,10 +35,11 @@ jobs:
         run: make test
 
       - name: Install UPX
+        if: inputs.upx == true
         run: sudo apt-get update && sudo apt-get install -y upx-ucl
 
       - name: Build CLI binaries
-        run: make release-cli
+        run: make release-cli UPX=${{ inputs.upx && '1' || '0' }}
 
       - name: Generate Checksums
         run: make checksum

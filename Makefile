@@ -45,7 +45,7 @@ help:
 	@echo "  make crossAll        - 交叉编译 6 平台二进制 (linux/darwin/windows x amd64/arm64)"
 	@echo "  make upx             - 使用 UPX 压缩 $(BUILD_DIR)/ 下的二进制"
 	@echo "  make checksum        - 生成 $(BUILD_DIR)/checksums.txt SHA256 校验和"
-	@echo "  make release-cli     - 完整发布流程: 清理 -> 交叉编译 -> UPX 压缩 -> 生成校验和"
+	@echo "  make release-cli     - 完整发布流程: 清理 -> 交叉编译 -> 生成校验和 (UPX=1 才压缩)"
 	@echo "  make test            - 运行全部 Go 单元测试"
 	@echo "  make lint            - 运行 golangci-lint 代码检查"
 	@echo ""
@@ -107,7 +107,8 @@ checksum:
 	( sha256sum $(BINARY_NAME)* 2>/dev/null || shasum -a 256 $(BINARY_NAME)* 2>/dev/null ) > checksums.txt && \
 	cat checksums.txt
 
-release-cli: clean-dist crossAll upx checksum
+# UPX 压缩默认关闭，make release-cli UPX=1 才启用
+release-cli: clean-dist crossAll $(if $(filter 1,$(UPX)),upx) checksum
 
 clean-dist:
 	@rm -rf $(BUILD_DIR)

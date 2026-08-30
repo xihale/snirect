@@ -35,7 +35,7 @@ Debug 包 applicationId 带 `.debug` 后缀，可与 Release 共存。签名配�
 
 发布只走 **git tag + GitHub Actions**，CLI 与 Android 两条线各自独立发版：
 
-- CLI：推送 `v*`（例如 `v1.5.0`）→ [release-cli.yml](../.github/workflows/release-cli.yml)：交叉编译 6 个平台二进制、UPX 压缩、生成 SHA256 校验和，挂到 Releases，并同步 AUR（`snirect` / `snirect-bin`）
+- CLI：推送 `v*`（例如 `v1.5.0`）→ [release-cli.yml](../.github/workflows/release-cli.yml)：交叉编译 6 个平台二进制、生成 SHA256 校验和，挂到 Releases，并同步 AUR（`snirect` / `snirect-bin`）。UPX 压缩默认关：本地 `make release-cli UPX=1`，或手动触发 workflow 勾选 upx
 - Android：推送 `android-v*`（例如 `android-v0.4.0`）→ [release-android.yml](../.github/workflows/release-android.yml)：构建签名 APK（arm64 + x86_64）挂到 Releases
 - [ci.yml](../.github/workflows/ci.yml)：非 tag 推送与 PR 跑 lint + 单元测试
 
