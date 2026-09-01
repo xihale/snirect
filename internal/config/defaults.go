@@ -14,6 +14,10 @@ const SampleConfigTOML = `# Snirect Configuration File
 #   "strict" - Standard strict verification. Recommended for high security.
 #   [ "domain1.com", "domain2.com" ] - List of domains to enable verification for.
 #
+# Scope: only hosts Snirect intercepts (rule-bearing) are affected. Hosts
+# without rules are never re-signed — their TLS passes through and the client
+# sees the original server certificate, whatever this value is.
+#
 # 证书域名校验策略
 # 控制 Snirect 如何验证远程服务器的证书域名。
 # 可选值:
@@ -21,6 +25,9 @@ const SampleConfigTOML = `# Snirect Configuration File
 #   true     - (默认) 宽松校验。允许子域名间的通配匹配。
 #   "strict" - 标准严格校验。建议追求安全的用户开启。
 #   [ "domain1.com", "domain2.com" ] - 仅对列表内的域名开启校验。
+#
+# 作用范围：只影响被截获（有规则）的主机。无规则站点不会被重签，TLS 原样
+# 透传，客户端看到的是服务器原本的证书，与本项取值无关。
 # check_hostname = true
 
 # [System Proxy]

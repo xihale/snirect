@@ -218,12 +218,15 @@ func TestHandleHTTP_Redirect(t *testing.T) {
 
 // TestShouldIntercept tests the logic of deciding whether to MITM.
 func TestShouldIntercept(t *testing.T) {
-	baseRules := rules.NewRules()
-	// Helper to create ProxyServer with given settings.
-	makePS := func(checkHostname interface{}, hasAlter bool) *ProxyServer {
-		rls := baseRules
+	// Helper to create ProxyServer with given settings. Fresh rules per case:
+	// a shared instance would leak entries across subtests.
+	makePS := func(checkHostname interface{}, hasAlter, hasVerifyOff bool) *ProxyServer {
+		rls := rules.NewRules()
 		if hasAlter {
-			baseRules.AlterHostname["example.com"] = "fake.com"
+			rls.AlterHostname["example.com"] = "fake.com"
+		}
+		if hasVerifyOff {
+			rls.CertVerify["example.com"] = false
 		}
 		return &ProxyServer{
 			Config: &config.Config{CheckHostname: checkHostname},
@@ -233,25 +236,32 @@ func TestShouldIntercept(t *testing.T) {
 
 	tests := []struct {
 		name          string
+		host          string
 		port          string
 		checkHostname interface{}
 		hasAlter      bool
+		hasVerifyOff  bool
 		want          bool
 	}{
 		// Port not 443 -> never intercept
-		{"port 80", "80", true, false, false},
-		// Port 443, no alter, global verification enabled (policy.Enabled true) -> direct tunnel (no intercept)
-		{"no alter, verif enabled", "443", true, false, false},
-		// Port 443, no alter, global verification disabled (policy.Enabled false) -> intercept to bypass verification
-		{"no alter, verif disabled", "443", false, false, true},
-		// Port 443, alter rule present -> intercept
-		{"alter rule", "443", true, true, true},
+		{"port 80", "example.com", "80", true, false, false, false},
+		// Port 443, no rules at all -> pass through with the original
+		// certificate, whatever the global verification setting says
+		{"no rules, verif enabled", "example.com", "443", true, false, false, false},
+		{"no rules, verif disabled", "example.com", "443", false, false, false, false},
+		// Port 443, alter rule present -> intercept (any global setting)
+		{"alter rule, verif enabled", "example.com", "443", true, true, false, true},
+		{"alter rule, verif disabled", "example.com", "443", false, true, false, true},
+		// Per-host verify-off rule pins interception even without an alter rule
+		{"per-host verify off", "example.com", "443", true, false, true, true},
+		// Hook-owned host (github codeload fix) intercepts even rule-less
+		{"hook host", "github.com", "443", true, false, false, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ps := makePS(tt.checkHostname, tt.hasAlter)
-			got := ps.shouldIntercept("example.com", tt.port)
+			ps := makePS(tt.checkHostname, tt.hasAlter, tt.hasVerifyOff)
+			got := ps.shouldIntercept(tt.host, tt.port)
 			if got != tt.want {
 				t.Fatalf("shouldIntercept: got %v, want %v", got, tt.want)
 			}

@@ -347,26 +347,30 @@ func (s *ProxyServer) hijackConnection(w http.ResponseWriter) (net.Conn, error) 
 	return conn, err
 }
 
+// shouldIntercept decides whether a CONNECT goes through the MITM pipeline or
+// a blind direct tunnel. Only hosts snirect actually processes get re-signed:
+// hosts with an SNI-rewrite rule, hosts whose per-host policy turns upstream
+// verification off (they only complete a handshake when MITM'd), and
+// hook-owned sites (which need the decrypted stream). Everything else passes
+// through untouched — the client finishes TLS with the real server and sees
+// the original certificate. The global check_hostname setting never widens
+// interception; it only governs how upstream certs are verified on hosts that
+// are MITM'd anyway (see verifyServerCert).
 func (s *ProxyServer) shouldIntercept(host, port string) bool {
 	// Only intercept port 443
 	if port != "443" {
 		return false
 	}
 
-	// Check rules
-	_, hasAlter := s.Rules.GetAlterHostname(host)
-	policy, hasCert := s.Rules.GetCertVerify(host)
-
-	// If no specific rule, use global setting
-	if !hasCert {
-		policy = s.Config.CheckHostnamePolicy()
+	if _, hasAlter := s.Rules.GetAlterHostname(host); hasAlter {
+		return true
 	}
-
-	// If global verification is enabled (policy.Enabled == true) AND no SNI modification is needed,
-	// we can bypass MITM (Direct Tunnel).
-	// Logic: We only MITM if we *need* to modify SNI or if we want to bypass cert verification (policy.Enabled == false).
-	// If policy.Enabled is TRUE, we might still MITM if we need to modify SNI.
-	return hasAlter || !policy.Enabled
+	if policy, hasCert := s.Rules.GetCertVerify(host); hasCert && !policy.Enabled {
+		return true
+	}
+	// Transparent flows pass the ClientHello SNI as host, so the hook's
+	// host-or-SNI match collapses to this single check.
+	return tunnelHookFor(host, host) != nil
 }
 
 // upstreamOffer derives the ALPN protocol list to offer the upstream from the
