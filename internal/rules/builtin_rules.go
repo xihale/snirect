@@ -2,7 +2,7 @@
 // LoadRules() into the running binary. No runtime fetching or codegen.
 //
 // AlterHostname/Hosts are synced from Cealing-Host releases (currently
-// 1.1.4.52) with these adaptations: browser-only (#) and disabled (^) rules
+// 1.1.4.53) with these adaptations: browser-only (#) and disabled (^) rules
 // skipped, $ prefixes stripped, IPv6-only hosts dropped (alter_hostname
 // kept), empty hosts (127.0.0.1) skipped, and t.me/telegram.me kept as the
 // precise "*.t.me"+"t.me" split instead of upstream's "*t.me" suffix form
@@ -18,9 +18,11 @@ var builtinRules = &Rules{
 	AlterHostname: map[string]string{
 
 		"*.buy.yahoo.com":          "buy.yahoo.com",
+		"*.fanbox.cc":              "",
 		"*.ggpht.com":              "g.cn",
 		"*.ig.me":                  "",
 		"*.media.tumblr.com":       "",
+		"*.pixiv.net":              "",
 		"*.t.me":                   "",
 		"*.w.wiki":                 "",
 		"*.yahoo.com":              "www.yahoo.com",
@@ -55,7 +57,6 @@ var builtinRules = &Rules{
 		"*exhentai.org":            "",
 		"*eyny.com":                "",
 		"*facebook.com":            "",
-		"*fanbox.cc":               "pixivision.net",
 		"*fbcdn.net":               "",
 		"*flickr.com":              "",
 		"*gamer.com.tw":            "",
@@ -90,7 +91,6 @@ var builtinRules = &Rules{
 		"*pinimg.com":              "",
 		"*pinterest.com":           "",
 		"*pixeldrain.com":          "pixeldra.in",
-		"*pixiv.net":               "pixivision.net",
 		"*pornhub.com":             "",
 		"*proton.me":               "",
 		"*pximg.net":               "",
@@ -248,9 +248,15 @@ var builtinRules = &Rules{
 		"*google.com":       "g.cn",
 		"*google.com.hk":    "g.cn",
 		"*gstatic.com":      "g.cn",
-		"*pixiv.net":        []interface{}{"*.pixivision.net", "pixivision.net"},
-		"*youtube.com":      []interface{}{"*.google.cn", "google.cn"},
-		"*ytimg.com":        []interface{}{"*.google.cn", "google.cn"},
+		// Cealing-Host 1.1.4.53 dropped the pixivision.net front for pixiv /
+		// fanbox (upstream now sends a unique random SNI). snirect strips SNI
+		// instead — real pixiv/fanbox SNI is GFW-reset (probed from gx,
+		// 2026-09-17), while the 210.140.139.155 default vhost answers empty
+		// SNI with pixiv's real multi-SAN leaf (pixiv.net, *.pixiv.net,
+		// pixiv.me, fanbox.cc, *.fanbox.cc), verified live from two CN networks.
+		"*.pixiv.net":  []interface{}{"pixiv.net", "*.pixiv.net", "pixiv.me", "fanbox.cc", "*.fanbox.cc"},
+		"*youtube.com": []interface{}{"*.google.cn", "google.cn"},
+		"*ytimg.com":   []interface{}{"*.google.cn", "google.cn"},
 		// android/blogger/youtu.be share the g.cn front with youtube — the old
 		// healthdatanexus.ai allowlist is a dead front and rejects the real cert.
 		"*android.com":   []interface{}{"*.google.cn", "google.cn", "g.cn", "*.g.cn"},
@@ -259,7 +265,7 @@ var builtinRules = &Rules{
 		"*bbci.co.uk":    []interface{}{"*.cdn.cyberarena.at", "cdn.cyberarena.at"},
 		// CDN hosts present their own *.cdn-telegram.org leaf (not *.telegram.org).
 		"*cdn-telegram.org": []interface{}{"*.cdn-telegram.org", "cdn-telegram.org", "*.telegram.org", "telegram.org"},
-		"*fanbox.cc":        []interface{}{"*.pixivision.net", "pixivision.net"},
+		"*.fanbox.cc":       []interface{}{"pixiv.net", "*.pixiv.net", "pixiv.me", "fanbox.cc", "*.fanbox.cc"},
 		"*ig.me":            []interface{}{"*.instagram.com", "*.cdninstagram.com", "*.igsonar.com", "cdninstagram.com", "igsonar.com", "instagram.com"},
 		"*instagr.am":       []interface{}{"*.instagram.com", "*.cdninstagram.com", "*.igsonar.com", "cdninstagram.com", "igsonar.com", "instagram.com"},
 		"*mega.io":          []interface{}{"*.static.mega.co.nz", "static.mega.co.nz"},
@@ -287,8 +293,8 @@ var builtinRules = &Rules{
 		"mega.io":             []interface{}{"*.static.mega.co.nz", "static.mega.co.nz"},
 		"redditstatic.com":    []interface{}{"*.reddit.com", "reddit.com"},
 		"*scratch.mit.edu":    []interface{}{"d.sni-645-default.ssl.fastly.net"},
-		// api.fanbox.cc is pinned to its own Cloudflare IP (not the pixivision
-		// front used by *fanbox.cc), so it presents a real *.fanbox.cc cert.
+		// api.fanbox.cc keeps its own Cloudflare IP with self-SNI (unlike the
+		// *.fanbox.cc default-vhost pin), so it presents a real *.fanbox.cc cert.
 		"api.fanbox.cc":    []interface{}{"*.fanbox.cc", "fanbox.cc"},
 		"*sukebei.nyaa.si": false,
 		// These SNI-stripped fronts currently return empty-SAN / honeypot leaves
@@ -312,9 +318,11 @@ var builtinRules = &Rules{
 		"*youtube-nocookie.com":       []interface{}{"*.google.cn", "google.cn", "g.cn", "*.g.cn"},
 	},
 	Hosts: map[string]string{
+		"*.fanbox.cc":             "210.140.139.155",
 		"*.ggpht.com":             "183.56.143.147",
 		"*.ig.me":                 "157.240.27.174",
 		"*.media.tumblr.com":      "192.0.77.3",
+		"*.pixiv.net":             "210.140.139.155",
 		"*.t.me":                  "45.192.12.153",
 		"*.w.wiki":                "185.15.59.224",
 		"*amazon.co.jp":           "13.35.219.115",
@@ -344,7 +352,6 @@ var builtinRules = &Rules{
 		"*exhentai.org":           "178.175.132.22",
 		"*eyny.com":               "23.19.72.223",
 		"*facebook.com":           "157.240.22.169",
-		"*fanbox.cc":              "210.140.139.155",
 		"*fbcdn.net":              "157.240.22.169",
 		"*flickr.com":             "13.33.142.102",
 		"*gamer.com.tw":           "104.16.223.104",
@@ -378,7 +385,6 @@ var builtinRules = &Rules{
 		"*pinimg.com":             "151.101.0.84",
 		"*pinterest.com":          "151.101.0.84",
 		"*pixeldrain.com":         "103.107.198.191",
-		"*pixiv.net":              "210.140.139.155",
 		"*pornhub.com":            "66.254.114.40",
 		"*proton.me":              "185.70.42.45",
 		"*pximg.net":              "210.140.139.133",

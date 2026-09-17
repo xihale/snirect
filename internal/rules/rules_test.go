@@ -148,9 +148,11 @@ func TestLoadRules_FrontedHostsHaveAllowlist(t *testing.T) {
 		target string
 		allow  []string
 	}{
-		// A class — confirmed front certs via insecure probe.
-		{"www.pixiv.net", "pixivision.net", []string{"*.pixivision.net", "pixivision.net"}},
-		{"www.fanbox.cc", "pixivision.net", []string{"*.pixivision.net", "pixivision.net"}},
+		// A class — confirmed front certs via insecure probe. pixiv/fanbox moved
+		// to SNI-strip in Cealing-Host 1.1.4.53: the 210.140.139.155 default
+		// vhost serves pixiv's real multi-SAN leaf (probed live 2026-09-17).
+		{"www.pixiv.net", "", []string{"pixiv.net", "*.pixiv.net", "pixiv.me", "fanbox.cc", "*.fanbox.cc"}},
+		{"www.fanbox.cc", "", []string{"pixiv.net", "*.pixiv.net", "pixiv.me", "fanbox.cc", "*.fanbox.cc"}},
 		{"www.nicovideo.jp", "", []string{"*.cloudfront.net", "cloudfront.net"}},
 		{"www.audiomack.com", "", []string{"*.cloudfront.net", "cloudfront.net"}},
 		{"www.twitch.tv", "", []string{"*.twitch.tv", "twitch.tv", "*.cloudfront.net", "cloudfront.net"}},
