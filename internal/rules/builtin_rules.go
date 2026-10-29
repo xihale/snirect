@@ -2,7 +2,7 @@
 // LoadRules() into the running binary. No runtime fetching or codegen.
 //
 // AlterHostname/Hosts are synced from Cealing-Host releases (currently
-// 1.1.4.53) with these adaptations: browser-only (#) and disabled (^) rules
+// 1.1.4.55) with these adaptations: browser-only (#) and disabled (^) rules
 // skipped, $ prefixes stripped, IPv6-only hosts dropped (alter_hostname
 // kept), empty hosts (127.0.0.1) skipped, and t.me/telegram.me kept as the
 // precise "*.t.me"+"t.me" split instead of upstream's "*t.me" suffix form
@@ -12,10 +12,16 @@
 // *github.io Pages front are snirect-specific too (validated against live
 // edges; see the inline comments).
 //
-// Front IPs are snirect-specific where upstream's are dead: 1.1.4.53 still
-// pins Google to 183.56.143.147 and Telegram to 45.192.12.153, but both
-// fronts were retired (see the inline notes). Front IPs are re-probed when a
-// host fails; the rest of the rule set stays verbatim from upstream.
+// Front IPs are snirect-specific where upstream's are dead. 1.1.4.55 moved
+// Google off the retired 183.56.143.147 to the rotating hostname
+// google.spacetime.cc.cd (→ 64.233.168.107 at sync time); snirect keeps its
+// own verified GFE, and still ships Telegram's front IP rather than a host
+// name because the Telegram DC takes every *.telegram.org Host on empty SNI.
+// 1.1.4.55 also updated the dailymotion/upld/flickr pins and removed the
+// pixiv/fanbox/ehgt/greasyfork families outright — those fronts no longer
+// answer their Host headers, so the removals are mirrored here. Front IPs are
+// re-probed when a host fails; the rest of the rule set stays verbatim from
+// upstream.
 
 package rules
 
@@ -23,12 +29,10 @@ var builtinRules = &Rules{
 	AlterHostname: map[string]string{
 
 		"*.buy.yahoo.com":          "buy.yahoo.com",
-		"*.fanbox.cc":              "",
 		"*.ggpht.com":              "g.cn",
 		"*.googlevideo.com":        "",
 		"*.ig.me":                  "",
 		"*.media.tumblr.com":       "",
-		"*.pixiv.net":              "",
 		"*.t.me":                   "",
 		"*.w.wiki":                 "",
 		"*.yahoo.com":              "www.yahoo.com",
@@ -56,7 +60,6 @@ var builtinRules = &Rules{
 		"*dropbox.com":             "",
 		"*duckduckgo.com":          "",
 		"*e-hentai.org":            "",
-		"*ehgt.org":                "",
 		"*ehtracker.org":           "",
 		"*ehwiki.org":              "",
 		"*etsy.com":                "",
@@ -73,7 +76,6 @@ var builtinRules = &Rules{
 		"*google.com":              "g.cn",
 		"*google.com.hk":           "g.cn",
 		"*gravatar.com":            "",
-		"*greasyfork.org":          "",
 		"*gstatic.com":             "g.cn",
 		"*hentaiverse.org":         "",
 		"*huggingface.co":          "huggingface.cn",
@@ -152,7 +154,6 @@ var builtinRules = &Rules{
 		"alive.github.com":         "",
 		"collector.github.com":     "",
 		"api.audiomack.com":        "",
-		"api.fanbox.cc":            "api.fanbox.cc",
 		"api.github.com":           "",
 		"ask.vrchat.com":           "",
 		"assets.audiomack.com":     "",
@@ -170,13 +171,17 @@ var builtinRules = &Rules{
 		"community.github.com":     "",
 		"consent.yahoo.com":        "consent.yahoo.com",
 
-		"docker.io":                            "",
-		"docs.docker.io":                       "",
-		"docs-editor.proton.me":                "",
-		"docs-rts.proton.me":                   "",
-		"docs.github.com":                      "",
-		"docs.proton.me":                       "",
-		"drive.proton.me":                      "",
+		"docker.io":             "",
+		"docs.docker.io":        "",
+		"docs-editor.proton.me": "",
+		"docs-rts.proton.me":    "",
+		"docs.github.com":       "",
+		"docs.proton.me":        "",
+		"drive.proton.me":       "",
+		// 1.1.4.55: upstream splits these two Hugging Face subdomains off the
+		// *huggingface.co → huggingface.cn front. discuss goes to the Discourse
+		// host with SNI stripped (see Hosts/CertVerify).
+		"discuss.huggingface.co":               "",
 		"embed.nicovideo.jp":                   "",
 		"external-content.duckduckgo.com":      "",
 		"f-droid.org":                          "",
@@ -223,22 +228,25 @@ var builtinRules = &Rules{
 		"sp.nicovideo.jp":                      "",
 		"sso.proton.me":                        "",
 		"status.docker.io":                     "",
-		"store.steampowered.com":               "",
-		"support.github.com":                   "",
-		"t.me":                                 "",
-		"telegram.me":                          "",
-		"upld.e-hentai.org":                    "",
-		"upload.github.com":                    "",
-		"uploads.github.com":                   "",
-		"upload.wikimedia.org":                 "",
-		"w.wiki":                               "",
-		"wallet.proton.me":                     "",
-		"wktk.nicovideo.jp":                    "",
-		"www.docker.io":                        "",
-		"www.ecosia.org":                       "www.ecosia.org",
-		"www.f-droid.org":                      "",
-		"www.ok.ru":                            "",
-		"zrh-storage.proton.me":                "",
+		// 1.1.4.55: the status page moved to Better Uptime, whose host serves
+		// Host: status.huggingface.co only under the singpass SNI.
+		"status.huggingface.co":  "status.singpass.gov.sg",
+		"store.steampowered.com": "",
+		"support.github.com":     "",
+		"t.me":                   "",
+		"telegram.me":            "",
+		"upld.e-hentai.org":      "",
+		"upload.github.com":      "",
+		"uploads.github.com":     "",
+		"upload.wikimedia.org":   "",
+		"w.wiki":                 "",
+		"wallet.proton.me":       "",
+		"wktk.nicovideo.jp":      "",
+		"www.docker.io":          "",
+		"www.ecosia.org":         "www.ecosia.org",
+		"www.f-droid.org":        "",
+		"www.ok.ru":              "",
+		"zrh-storage.proton.me":  "",
 	},
 	CertVerify: map[string]interface{}{
 		"*.objects-origin.githubusercontent.com": []interface{}{"*.actions.githubusercontent.com", "actions.githubusercontent.com"},
@@ -254,15 +262,8 @@ var builtinRules = &Rules{
 		"*google.com":       "g.cn",
 		"*google.com.hk":    "g.cn",
 		"*gstatic.com":      "g.cn",
-		// Cealing-Host 1.1.4.53 dropped the pixivision.net front for pixiv /
-		// fanbox (upstream now sends a unique random SNI). snirect strips SNI
-		// instead — real pixiv/fanbox SNI is GFW-reset (probed from gx,
-		// 2026-09-17), while the 210.140.139.155 default vhost answers empty
-		// SNI with pixiv's real multi-SAN leaf (pixiv.net, *.pixiv.net,
-		// pixiv.me, fanbox.cc, *.fanbox.cc), verified live from two CN networks.
-		"*.pixiv.net":  []interface{}{"pixiv.net", "*.pixiv.net", "pixiv.me", "fanbox.cc", "*.fanbox.cc"},
-		"*youtube.com": []interface{}{"*.google.cn", "google.cn"},
-		"*ytimg.com":   []interface{}{"*.google.cn", "google.cn"},
+		"*youtube.com":      []interface{}{"*.google.cn", "google.cn"},
+		"*ytimg.com":        []interface{}{"*.google.cn", "google.cn"},
 		// android/blogger/youtu.be share the g.cn front with youtube — the old
 		// healthdatanexus.ai allowlist is a dead front and rejects the real cert.
 		"*android.com":   []interface{}{"*.google.cn", "google.cn", "g.cn", "*.g.cn"},
@@ -271,7 +272,6 @@ var builtinRules = &Rules{
 		"*bbci.co.uk":    []interface{}{"*.cdn.cyberarena.at", "cdn.cyberarena.at"},
 		// CDN hosts present their own *.cdn-telegram.org leaf (not *.telegram.org).
 		"*cdn-telegram.org": []interface{}{"*.cdn-telegram.org", "cdn-telegram.org", "*.telegram.org", "telegram.org"},
-		"*.fanbox.cc":       []interface{}{"pixiv.net", "*.pixiv.net", "pixiv.me", "fanbox.cc", "*.fanbox.cc"},
 		"*ig.me":            []interface{}{"*.instagram.com", "*.cdninstagram.com", "*.igsonar.com", "cdninstagram.com", "igsonar.com", "instagram.com"},
 		"*instagr.am":       []interface{}{"*.instagram.com", "*.cdninstagram.com", "*.igsonar.com", "cdninstagram.com", "igsonar.com", "instagram.com"},
 		"*mega.io":          []interface{}{"*.static.mega.co.nz", "static.mega.co.nz"},
@@ -288,21 +288,26 @@ var builtinRules = &Rules{
 		"*blogger.com":          []interface{}{"*.google.cn", "google.cn", "g.cn", "*.g.cn"},
 		"business.whatsapp.com": []interface{}{"*.facebook.com", "*.facebook.net", "*.fbcdn.net", "*.fbsbx.com", "*.m.facebook.com", "*.messenger.com", "*.xx.fbcdn.net", "*.xy.fbcdn.net", "*.xz.fbcdn.net", "facebook.com", "messenger.com"},
 		"docs.github.com":       []interface{}{"*.githubassets.com", "githubassets.com"},
-		"gemini.google.com":     false,
-		"gemini.gstatic.com":    "g.cn",
-		// identity.flickr.com is pinned (upstream rule) to a shared front whose
-		// SNI-stripped default-tenant leaf is *.bridgify.com — observed live,
-		// Amazon-issued. Without this allowlist the tunnel fails verification.
-		"identity.flickr.com": []interface{}{"*.bridgify.com", "bridgify.com"},
+		// 1.1.4.55 Hugging Face splits: status is served by Better Uptime under
+		// the singpass leaf; discuss is SNI-stripped at the Discourse host,
+		// whose empty-SNI vhost answer depends on the resolved edge — live
+		// probes saw both *.hosted-by-discourse.com and *.discourse.org
+		// (2026-10-29), so both Discourse leaves are allowed.
+		"status.huggingface.co":  []interface{}{"status.singpass.gov.sg"},
+		"discuss.huggingface.co": []interface{}{"*.hosted-by-discourse.com", "hosted-by-discourse.com", "*.discourse.org", "discourse.org"},
+		"gemini.google.com":      false,
+		"gemini.gstatic.com":     "g.cn",
+		// 1.1.4.55 moved identity.flickr.com to 34.192.66.226, whose empty-SNI
+		// default vhost presents Flickr's own Amazon-issued leaf
+		// (CN=flickr.com, SANs flickr.com / *.flickr.com / flic.kr) instead of
+		// the old *.bridgify.com tenant cert.
+		"identity.flickr.com": []interface{}{"flickr.com", "*.flickr.com", "flic.kr"},
 		"ig.me":               []interface{}{"*.instagram.com", "*.cdninstagram.com", "*.igsonar.com", "cdninstagram.com", "igsonar.com", "instagram.com"},
 		"instagr.am":          []interface{}{"*.instagram.com", "*.cdninstagram.com", "*.igsonar.com", "cdninstagram.com", "igsonar.com", "instagram.com"},
 		"mega.io":             []interface{}{"*.static.mega.co.nz", "static.mega.co.nz"},
 		"redditstatic.com":    []interface{}{"*.reddit.com", "reddit.com"},
 		"*scratch.mit.edu":    []interface{}{"d.sni-645-default.ssl.fastly.net"},
-		// api.fanbox.cc keeps its own Cloudflare IP with self-SNI (unlike the
-		// *.fanbox.cc default-vhost pin), so it presents a real *.fanbox.cc cert.
-		"api.fanbox.cc":    []interface{}{"*.fanbox.cc", "fanbox.cc"},
-		"*sukebei.nyaa.si": false,
+		"*sukebei.nyaa.si":    false,
 		// These SNI-stripped fronts currently return empty-SAN / honeypot leaves
 		// (CN=fallback.wgcz.net, please-go-away, bare IP). Disable verify so the
 		// tunnel still opens; Hosts IPs may need a later refresh.
@@ -330,11 +335,9 @@ var builtinRules = &Rules{
 		"*youtube-nocookie.com": []interface{}{"*.google.cn", "google.cn", "g.cn", "*.g.cn"},
 	},
 	Hosts: map[string]string{
-		"*.fanbox.cc":            "210.140.139.155",
 		"*.ggpht.com":            "64.233.160.142",
 		"*.ig.me":                "157.240.27.174",
 		"*.media.tumblr.com":     "192.0.77.3",
-		"*.pixiv.net":            "210.140.139.155",
 		"*.t.me":                 "149.154.166.110",
 		"*.w.wiki":               "185.15.59.224",
 		"*amazon.co.jp":          "13.35.219.115",
@@ -357,7 +360,6 @@ var builtinRules = &Rules{
 		"*dropbox.com":           "162.125.248.18",
 		"*duckduckgo.com":        "20.43.161.105",
 		"*e-hentai.org":          "172.66.132.196",
-		"*ehgt.org":              "109.236.85.28",
 		"*ehtracker.org":         "5.79.104.115",
 		"*ehwiki.org":            "178.162.151.58",
 		"*etsy.com":              "151.101.193.224",
@@ -374,15 +376,17 @@ var builtinRules = &Rules{
 		// Upstream's 183.56.143.147 Google front is retired: 183.56.143.0/24 is
 		// shared hosting now (443 refused on .147; the rest answer VMware /
 		// Huawei / jointas certs — probed 2026-10-28 from both a CN VPS and an
-		// unfiltered host). 64.233.160.142 (oi-in-f142.1e100.net) is a Google
-		// GFE that answers SNI g.cn with the *.google.cn leaf (SANs include
-		// g.cn) and serves the real content behind the original Host header:
-		// www.google.com 204 / search 200 / gstatic 204 / youtube 200 /
-		// ytimg 200, stable 5/5 probes from a Tencent Cloud GZ VPS.
+		// unfiltered host). 1.1.4.55 replaced it with the rotating hostname
+		// google.spacetime.cc.cd, which resolved to 64.233.168.107 and answers
+		// the same g.cn SNI — so upstream's source is a GFE either way.
+		// 64.233.160.142 (oi-in-f142.1e100.net) is the GFE snirect pins: it
+		// answers SNI g.cn with the *.google.cn leaf (SANs include g.cn) and
+		// serves the real content behind the original Host header: www.google.com
+		// 302 / gstatic 404 (unpinned path) / youtube 200 / ytimg 200, stable
+		// probes from a Tencent Cloud GZ VPS, re-checked 2026-10-29.
 		"*google.com":             "64.233.160.142",
 		"*google.com.hk":          "64.233.160.142",
 		"*gravatar.com":           "192.0.80.240",
-		"*greasyfork.org":         "96.126.98.220",
 		"*gstatic.com":            "64.233.160.142",
 		"*hentaiverse.org":        "178.162.151.56",
 		"*huggingface.co":         "3.167.200.113",
@@ -470,7 +474,6 @@ var builtinRules = &Rules{
 		"alive.github.com":      "140.82.114.26",
 		"collector.github.com":  "140.82.114.26",
 		"api.audiomack.com":     "3.167.200.113",
-		"api.fanbox.cc":         "172.64.146.116",
 		"api.github.com":        "20.205.243.168",
 		"ask.vrchat.com":        "216.66.8.43",
 		"assets.audiomack.com":  "3.167.200.113",
@@ -505,23 +508,33 @@ var builtinRules = &Rules{
 		"docs-rts.proton.me":                "185.70.42.71",
 		"docs.github.com":                   "185.199.110.154",
 		"docs.proton.me":                    "185.70.42.69",
-		"drive.proton.me":                   "185.70.42.40",
-		"embed.nicovideo.jp":                "3.167.200.113",
-		"external-content.duckduckgo.com":   "20.43.160.189",
-		"f-droid.org":                       "37.218.243.72",
-		"fdroid.org":                        "37.218.243.72",
-		"forum.f-droid.org":                 "37.218.242.53",
-		"fra-storage.proton.me":             "185.205.70.10",
-		"gemini.google.com":                 "47.102.115.14",
-		"get.docker.io":                     "elb-io.us-east-1.aws.dckr.io",
-		"gql.twitch.tv":                     "151.101.194.167",
-		"graphql.api.dailymotion.com":       "34.84.14.157",
-		"guce.yahoo.com":                    "guce.yahoo.com",
-		"hello.vrchat.com":                  "198.185.159.145",
-		"hub.docker.com":                    "hub-origin.docker.com",
-		"i.ytimg.com":                       "64.233.160.142",
+		// 1.1.4.55 splits discuss off *huggingface.co: the Discourse host
+		// answers Host: discuss.huggingface.co on empty SNI with a
+		// *.hosted-by-discourse.com leaf (200, probed 2026-10-29).
+		"discuss.huggingface.co":          "hellohellohello.hosted-by-discourse.com",
+		"drive.proton.me":                 "185.70.42.40",
+		"embed.nicovideo.jp":              "3.167.200.113",
+		"external-content.duckduckgo.com": "20.43.160.189",
+		"f-droid.org":                     "37.218.243.72",
+		"fdroid.org":                      "37.218.243.72",
+		"forum.f-droid.org":               "37.218.242.53",
+		"fra-storage.proton.me":           "185.205.70.10",
+		"gemini.google.com":               "47.102.115.14",
+		"get.docker.io":                   "elb-io.us-east-1.aws.dckr.io",
+		"gql.twitch.tv":                   "151.101.194.167",
+		// 1.1.4.55's replacement front (18.65.14.4, a dailymotion CloudFront
+		// edge) refuses TCP from CN — errno 111, probed 2026-10-29 from a
+		// Tencent Cloud GZ VPS — and every dailymotion CF edge answers an
+		// empty-SNI handshake with alert 40, so no working front exists for
+		// this SNI-stripped rule today. Kept at upstream's value pending a
+		// re-probe rather than left on the equally dead 34.84.14.157.
+		"graphql.api.dailymotion.com": "18.65.14.4",
+		"guce.yahoo.com":              "guce.yahoo.com",
+		"hello.vrchat.com":            "198.185.159.145",
+		"hub.docker.com":              "hub-origin.docker.com",
+		"i.ytimg.com":                 "64.233.160.142",
 
-		"identity.flickr.com": "100.57.141.104",
+		"identity.flickr.com": "34.192.66.226",
 		"ig.me":               "157.240.27.174",
 		"images.prismic.io":   "151.101.78.208",
 
@@ -552,6 +565,9 @@ var builtinRules = &Rules{
 		"sp.nicovideo.jp":                      "3.167.200.113",
 		"sso.proton.me":                        "185.70.42.20",
 		"status.docker.io":                     "elb-io.us-east-1.aws.dckr.io",
+		// 1.1.4.55 splits status off *huggingface.co: Better Uptime serves it
+		// under the status.singpass.gov.sg SNI (200, probed 2026-10-29).
+		"status.huggingface.co": "statuspage.betteruptime.com",
 		// Upstream's 23.39.61.133 store front is dead: TCP opens but the empty-SNI
 		// handshake aborts (remote error: tls: internal error, probed 2026-10-28).
 		// 184.50.187.66 (the Valve front pinned for *steamcommunity.com) does
@@ -567,7 +583,11 @@ var builtinRules = &Rules{
 		"support.github.com":     "185.199.108.133",
 		"t.me":                   "149.154.166.110",
 		"telegram.me":            "149.154.166.110",
-		"upld.e-hentai.org":      "89.149.221.236",
+		// 1.1.4.55 moved upld.e-hentai.org from the retired 89.149.221.236
+		// (443 refused) to 85.17.247.144, whose empty-SNI vhost answers the
+		// Host with e-hentai's LE leaf (SAN *.e-hentai.org) and a 301.
+		// Probed live 2026-10-29 from a Tencent Cloud GZ VPS.
+		"upld.e-hentai.org": "85.17.247.144",
 		// snirect-specific: upload.github.com has no public A record (GitHub
 		// removed it from DNS; only the 302 from github.com/git-receive-pack
 		// references it). Falling through to the *github.com web edge gets a

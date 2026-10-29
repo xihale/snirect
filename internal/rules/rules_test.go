@@ -150,8 +150,16 @@ func TestLoadRules_FrontPinRefresh(t *testing.T) {
 		{"store.steampowered.com", "", "23.217.182.113"},
 		{"steamcommunity.com", "", "184.50.187.66"},
 		// Synced from Cealing-Host 1.1.4.53: YouTube's video CDN is SNI-stripped
-		// with no host pin, like the pixiv/fanbox front.
+		// with no host pin, like the old pixiv/fanbox front.
 		{"r1---sn-4g5e6nez.googlevideo.com", "", ""},
+		// Cealing-Host 1.1.4.55 pin updates, re-probed live 2026-10-29: the
+		// previous upld/flickr pins refuse TCP or serve no cert, and the new
+		// Hugging Face splits bypass the *huggingface.co → huggingface.cn front.
+		{"upld.e-hentai.org", "", "85.17.247.144"},
+		{"identity.flickr.com", "", "34.192.66.226"},
+		{"graphql.api.dailymotion.com", "", "18.65.14.4"},
+		{"status.huggingface.co", "status.singpass.gov.sg", "statuspage.betteruptime.com"},
+		{"discuss.huggingface.co", "", "hellohellohello.hosted-by-discourse.com"},
 	}
 	for _, tc := range cases {
 		if got, ok := r.GetAlterHostname(tc.host); !ok || got != tc.sni {
@@ -180,16 +188,17 @@ func TestLoadRules_FrontPinRefresh(t *testing.T) {
 // TestLoadRules_FrontedHostsHaveAllowlist is the regression guard for the
 // domain-fronting cases surfaced (and fixed) by `snirect doctor`. Each entry
 // below rewrites SNI to a front domain whose cert does NOT name the original
-// host; without a CertVerify allowlist the handshake is rejected — exactly the
-// pixiv failure pattern. The expected Allowed set comes from the live leaf-cert
-// probe done during the doctor investigation.
+// host; without a CertVerify allowlist the handshake is rejected — the failure
+// pattern `snirect doctor` reports as a front-cert mismatch. The expected
+// Allowed set comes from the live leaf-cert probe done during the doctor
+// investigation.
 //
 // This is a positive-presence assertion rather than a full scan because the
 // predicate "this rewrite needs an allowlist" is not statically decidable:
 // `*netflix.com → netflix.com` rewrites SNI but the cert still names the host,
-// while `*pixiv.net → pixivision.net` does not. doctor --check-config is the
-// runtime equivalent that decides via live probe; this test just locks in the
-// cases we already confirmed.
+// while `*nicovideo.jp` (SNI-stripped, CloudFront leaf) does not. doctor
+// --check-config is the runtime equivalent that decides via live probe; this
+// test just locks in the cases we already confirmed.
 func TestLoadRules_FrontedHostsHaveAllowlist(t *testing.T) {
 	r, err := LoadRules()
 	if err != nil {
@@ -204,11 +213,10 @@ func TestLoadRules_FrontedHostsHaveAllowlist(t *testing.T) {
 		target string
 		allow  []string
 	}{
-		// A class — confirmed front certs via insecure probe. pixiv/fanbox moved
-		// to SNI-strip in Cealing-Host 1.1.4.53: the 210.140.139.155 default
-		// vhost serves pixiv's real multi-SAN leaf (probed live 2026-09-17).
-		{"www.pixiv.net", "", []string{"pixiv.net", "*.pixiv.net", "pixiv.me", "fanbox.cc", "*.fanbox.cc"}},
-		{"www.fanbox.cc", "", []string{"pixiv.net", "*.pixiv.net", "pixiv.me", "fanbox.cc", "*.fanbox.cc"}},
+		// A class — confirmed front certs via insecure probe. The pixiv /
+		// fanbox / api.fanbox families were removed in Cealing-Host 1.1.4.55:
+		// their pin answers empty-SNI vhost requests with a bare nginx 403 and
+		// pixiv/fanbox SNI is still GFW-reset, so no allowlist case remains.
 		{"www.nicovideo.jp", "", []string{"*.cloudfront.net", "cloudfront.net"}},
 		{"www.audiomack.com", "", []string{"*.cloudfront.net", "cloudfront.net"}},
 		{"www.twitch.tv", "", []string{"*.twitch.tv", "twitch.tv", "*.cloudfront.net", "cloudfront.net"}},
@@ -223,7 +231,12 @@ func TestLoadRules_FrontedHostsHaveAllowlist(t *testing.T) {
 		{"www.z-lib.help", "", []string{"*.go-to-library.sk", "go-to-library.sk"}},
 		{"www.z-library.sk", "", []string{"*.go-to-library.sk", "go-to-library.sk"}},
 		{"www.proton.me", "", []string{"*.proton.me", "proton.me", "*.pr.tn", "pr.tn"}},
-		{"api.fanbox.cc", "api.fanbox.cc", []string{"*.fanbox.cc", "fanbox.cc"}},
+		// 1.1.4.55 fronts, leaf probed live 2026-10-29: Flickr's own Amazon
+		// leaf at the stripped-SNI pin; Better Uptime under the singpass SNI;
+		// the Discourse host for discuss.
+		{"identity.flickr.com", "", []string{"flickr.com", "*.flickr.com", "flic.kr"}},
+		{"status.huggingface.co", "status.singpass.gov.sg", []string{"status.singpass.gov.sg"}},
+		{"discuss.huggingface.co", "", []string{"*.hosted-by-discourse.com", "hosted-by-discourse.com", "*.discourse.org", "discourse.org"}},
 
 		// B class — stale allowlist corrected: youtube/ggpht/ytimg used to point at
 		// healthdatanexus.ai (a dead front); the real Google front cert is *.google.cn.
