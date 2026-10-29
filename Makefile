@@ -119,9 +119,13 @@ test:
 	@echo ">>> 运行单元测试..."
 	go test -v -race ./...
 
+# golangci-lint 2.12 的 staticcheck(v0.7.0) 只认到 Go 1.26 的 IR：本机装了
+# go 1.27（Arch extra 2:1.27.0）时 go/types 会拒绝加载 stdlib（"file requires
+# newer Go version go1.27"），或者 buildir 直接 panic。CI 用 setup-go 装
+# go.mod 的版本所以照常通过；这里钉住工具链，让本机结果与 CI 一致。
 lint:
 	@echo ">>> 运行 golangci-lint..."
-	golangci-lint run --timeout=5m
+	GOTOOLCHAIN=go1.26.2 golangci-lint run --timeout=5m
 
 # --- Android 构建 ---
 
