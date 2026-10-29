@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"net"
-	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -79,29 +78,6 @@ func uidOfTCPFlow(srcIP net.IP, srcPort uint16, dstIP net.IP, dstPort uint16) in
 		return 0
 	}
 	return parseInetDiagUID(resp, srcPort, dstPort)
-}
-
-// uidOfConnectFlow parses the "ip:port" source/destination tuples the
-// netstack relay captured and returns the owning uid (0 when unattributable).
-func uidOfConnectFlow(src, dst string) int {
-	srcIPStr, srcPortStr, err := net.SplitHostPort(src)
-	if err != nil {
-		return 0
-	}
-	dstIPStr, dstPortStr, err := net.SplitHostPort(dst)
-	if err != nil {
-		return 0
-	}
-	srcIP, dstIP := net.ParseIP(srcIPStr), net.ParseIP(dstIPStr)
-	if srcIP == nil || dstIP == nil {
-		return 0
-	}
-	srcPort, _ := strconv.Atoi(srcPortStr)
-	dstPort, _ := strconv.Atoi(dstPortStr)
-	if srcPort <= 0 || srcPort > 65535 || dstPort <= 0 || dstPort > 65535 {
-		return 0
-	}
-	return uidOfTCPFlow(srcIP, uint16(srcPort), dstIP, uint16(dstPort))
 }
 
 // sockDiagQuery sends one exact-match SOCK_DIAG_BY_FAMILY request over a

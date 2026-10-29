@@ -242,7 +242,7 @@ func (b *netstackBridge) relayToProxy(client net.Conn, dst, src string) {
 	req += "X-Snirect-Src: " + src + "\r\n"
 	_, dPort, _ := net.SplitHostPort(dst)
 	if dPort == "443" {
-		if uid := uidOfConnectFlow(src, dst); uid > 0 {
+		if uid := uidOfFlow(src, dst); uid > 0 {
 			req += "X-Snirect-Uid: " + strconv.Itoa(uid) + "\r\n"
 		}
 	}

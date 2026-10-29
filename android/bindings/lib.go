@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -168,6 +169,30 @@ func hostUIDOfFlow(srcIP net.IP, srcPort uint16, dstIP net.IP, dstPort uint16) i
 	}
 	defer func() { _ = recover() }() // a JVM exception must not kill the relay
 	return int(cb.LookupUID(srcIP.String(), int32(srcPort), dstIP.String(), int32(dstPort)))
+}
+
+// uidOfFlow parses the "ip:port" source/destination tuples the netstack relay
+// captured and resolves the flow's uid through hostUIDOfFlow (0 when the
+// tuples are malformed or unattributable).
+func uidOfFlow(src, dst string) int {
+	srcIPStr, srcPortStr, err := net.SplitHostPort(src)
+	if err != nil {
+		return 0
+	}
+	dstIPStr, dstPortStr, err := net.SplitHostPort(dst)
+	if err != nil {
+		return 0
+	}
+	srcIP, dstIP := net.ParseIP(srcIPStr), net.ParseIP(dstIPStr)
+	if srcIP == nil || dstIP == nil {
+		return 0
+	}
+	srcPort, _ := strconv.Atoi(srcPortStr)
+	dstPort, _ := strconv.Atoi(dstPortStr)
+	if srcPort <= 0 || srcPort > 65535 || dstPort <= 0 || dstPort > 65535 {
+		return 0
+	}
+	return hostUIDOfFlow(srcIP, uint16(srcPort), dstIP, uint16(dstPort))
 }
 
 // SetDataDir records where the CA cert/key live. Must be called before
