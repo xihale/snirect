@@ -157,7 +157,7 @@ func TestLoadRules_FrontPinRefresh(t *testing.T) {
 		// Hugging Face splits bypass the *huggingface.co → huggingface.cn front.
 		{"upld.e-hentai.org", "", "85.17.247.144"},
 		{"identity.flickr.com", "", "34.192.66.226"},
-		{"graphql.api.dailymotion.com", "", "18.65.14.4"},
+		{"graphql.api.dailymotion.com", "d2is9o3959y6go.cloudfront.net", "d2is9o3959y6go.cloudfront.net"},
 		{"status.huggingface.co", "status.singpass.gov.sg", "statuspage.betteruptime.com"},
 		{"discuss.huggingface.co", "", "hellohellohello.hosted-by-discourse.com"},
 	}
@@ -237,6 +237,9 @@ func TestLoadRules_FrontedHostsHaveAllowlist(t *testing.T) {
 		{"identity.flickr.com", "", []string{"flickr.com", "*.flickr.com", "flic.kr"}},
 		{"status.huggingface.co", "status.singpass.gov.sg", []string{"status.singpass.gov.sg"}},
 		{"discuss.huggingface.co", "", []string{"*.hosted-by-discourse.com", "hosted-by-discourse.com", "*.discourse.org", "discourse.org"}},
+		// graphql.api.dailymotion.com: SNI rewritten to the CloudFront
+		// distribution's own name, whose leaf is Amazon's shared *.cloudfront.net.
+		{"graphql.api.dailymotion.com", "d2is9o3959y6go.cloudfront.net", []string{"*.cloudfront.net", "cloudfront.net"}},
 
 		// B class — stale allowlist corrected: youtube/ggpht/ytimg used to point at
 		// healthdatanexus.ai (a dead front); the real Google front cert is *.google.cn.

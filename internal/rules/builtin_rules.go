@@ -22,91 +22,103 @@
 // answer their Host headers, so the removals are mirrored here. Front IPs are
 // re-probed when a host fails; the rest of the rule set stays verbatim from
 // upstream.
+//
+// Two exceptions go past upstream's pin:
+//   - graphql.api.dailymotion.com is CloudFront-only, so it keeps the Host but
+//     rewrites SNI to the distribution name (CloudFront requires a matching
+//     SNI; the real one is GFW-reset and an empty one fails the handshake).
+//   - Reddit is dropped entirely: Fastly selects the service by SNI, so the
+//     empty-SNI front answers 403 Blocked, and the real SNI is reset on every
+//     peer. Leaving the rules in would only force reddit into snirect and away
+//     from whatever else the rule export feeds.
 
 package rules
 
 var builtinRules = &Rules{
 	AlterHostname: map[string]string{
 
-		"*.buy.yahoo.com":          "buy.yahoo.com",
-		"*.ggpht.com":              "g.cn",
-		"*.googlevideo.com":        "",
-		"*.ig.me":                  "",
-		"*.media.tumblr.com":       "",
-		"*.t.me":                   "",
-		"*.w.wiki":                 "",
-		"*.yahoo.com":              "www.yahoo.com",
-		"*amazon.co.jp":            "amazon.com",
-		"*android.com":             "g.cn",
-		"*api.mega.co.nz":          "",
-		"*apkmirror.com":           "",
-		"*archive.org":             "",
-		"*archiveofourown.org":     "",
-		"*audiomack.com":           "",
-		"*bbc.co.uk":               "",
-		"*bbc.com":                 "",
-		"*bbci.co.uk":              "",
-		"*behance.net":             "behance.net",
-		"*bilibili.tv":             "bilibili.tv",
-		"*blogger.com":             "g.cn",
-		"*character.ai":            "",
-		"*claude.ai":               "claude.ai",
-		"*dailymotion.com":         "",
-		"*discord.com":             "",
-		"*discord.gg":              "",
-		"*discordapp.com":          "",
-		"*discordapp.net":          "",
-		"*disneyplus.com":          "disneyplus.com",
-		"*dropbox.com":             "",
-		"*duckduckgo.com":          "",
-		"*e-hentai.org":            "",
-		"*ehtracker.org":           "",
-		"*ehwiki.org":              "",
-		"*etsy.com":                "",
-		"*exhentai.org":            "",
-		"*eyny.com":                "",
-		"*facebook.com":            "",
-		"*fbcdn.net":               "",
-		"*flickr.com":              "",
-		"*gamer.com.tw":            "",
-		"*gelbooru.com":            "",
-		"*github.com":              "",
-		"*github.io":               "",
-		"*githubusercontent.com":   "",
-		"*google.com":              "g.cn",
-		"*google.com.hk":           "g.cn",
-		"*gravatar.com":            "",
-		"*gstatic.com":             "g.cn",
-		"*hentaiverse.org":         "",
-		"*huggingface.co":          "huggingface.cn",
-		"*imgur.com":               "",
-		"*instagr.am":              "",
-		"*instagram.com":           "",
-		"*lumalabs.ai":             "vercel.com",
-		"*mediawiki.org":           "",
-		"*mega.io":                 "",
-		"*mega.nz":                 "",
-		"*netflix.com":             "netflix.com",
-		"*nicovideo.jp":            "",
-		"*nyaa.si":                 "ddos-guard.net",
-		"*nyt.com":                 "",
-		"*nytimes.com":             "",
-		"*ok.ru":                   "",
-		"*okx.com":                 "",
-		"*onedrive.live.com":       "",
-		"*patreon.com":             "",
-		"*patreonusercontent.com":  "",
-		"*pinimg.com":              "",
-		"*pinterest.com":           "",
-		"*pixeldrain.com":          "pixeldra.in",
-		"*pornhub.com":             "",
-		"*proton.me":               "",
-		"*pximg.net":               "",
-		"*quora.com":               "fs.quoracdn.net",
-		"*redd.it":                 "",
-		"*reddit.com":              "",
-		"*redditmedia.com":         "",
-		"*redditstatic.com":        "",
+		"*.buy.yahoo.com":         "buy.yahoo.com",
+		"*.ggpht.com":             "g.cn",
+		"*.googlevideo.com":       "",
+		"*.ig.me":                 "",
+		"*.media.tumblr.com":      "",
+		"*.t.me":                  "",
+		"*.w.wiki":                "",
+		"*.yahoo.com":             "www.yahoo.com",
+		"*amazon.co.jp":           "amazon.com",
+		"*android.com":            "g.cn",
+		"*api.mega.co.nz":         "",
+		"*apkmirror.com":          "",
+		"*archive.org":            "",
+		"*archiveofourown.org":    "",
+		"*audiomack.com":          "",
+		"*bbc.co.uk":              "",
+		"*bbc.com":                "",
+		"*bbci.co.uk":             "",
+		"*behance.net":            "behance.net",
+		"*bilibili.tv":            "bilibili.tv",
+		"*blogger.com":            "g.cn",
+		"*character.ai":           "",
+		"*claude.ai":              "claude.ai",
+		"*dailymotion.com":        "",
+		"*discord.com":            "",
+		"*discord.gg":             "",
+		"*discordapp.com":         "",
+		"*discordapp.net":         "",
+		"*disneyplus.com":         "disneyplus.com",
+		"*dropbox.com":            "",
+		"*duckduckgo.com":         "",
+		"*e-hentai.org":           "",
+		"*ehtracker.org":          "",
+		"*ehwiki.org":             "",
+		"*etsy.com":               "",
+		"*exhentai.org":           "",
+		"*eyny.com":               "",
+		"*facebook.com":           "",
+		"*fbcdn.net":              "",
+		"*flickr.com":             "",
+		"*gamer.com.tw":           "",
+		"*gelbooru.com":           "",
+		"*github.com":             "",
+		"*github.io":              "",
+		"*githubusercontent.com":  "",
+		"*google.com":             "g.cn",
+		"*google.com.hk":          "g.cn",
+		"*gravatar.com":           "",
+		"*gstatic.com":            "g.cn",
+		"*hentaiverse.org":        "",
+		"*huggingface.co":         "huggingface.cn",
+		"*imgur.com":              "",
+		"*instagr.am":             "",
+		"*instagram.com":          "",
+		"*lumalabs.ai":            "vercel.com",
+		"*mediawiki.org":          "",
+		"*mega.io":                "",
+		"*mega.nz":                "",
+		"*netflix.com":            "netflix.com",
+		"*nicovideo.jp":           "",
+		"*nyaa.si":                "ddos-guard.net",
+		"*nyt.com":                "",
+		"*nytimes.com":            "",
+		"*ok.ru":                  "",
+		"*okx.com":                "",
+		"*onedrive.live.com":      "",
+		"*patreon.com":            "",
+		"*patreonusercontent.com": "",
+		"*pinimg.com":             "",
+		"*pinterest.com":          "",
+		"*pixeldrain.com":         "pixeldra.in",
+		"*pornhub.com":            "",
+		"*proton.me":              "",
+		"*pximg.net":              "",
+		"*quora.com":              "fs.quoracdn.net",
+		// Reddit has no usable front: Fastly selects the service by SNI, so the
+		// empty-SNI path Cealing-Host pins (146.75.33.140) answers "403 Blocked"
+		// with the CN=default.ssl.fastly.net leaf, while SNI www.reddit.com /
+		// reddit.com / i.redd.it is reset by the GFW on any peer — 64.233.160.142
+		// (GFE), 1.1.1.1 and 104.16.89.20 all drop the handshake too, probed
+		// 2026-10-29. The rules are dropped rather than left failing so a downstream
+		// proxy can handle reddit; see the removed Hosts/CertVerify entries.
 		"*rfi.fr":                  "",
 		"*rumble.com":              "",
 		"*rutube.ru":               "",
@@ -181,17 +193,24 @@ var builtinRules = &Rules{
 		// 1.1.4.55: upstream splits these two Hugging Face subdomains off the
 		// *huggingface.co → huggingface.cn front. discuss goes to the Discourse
 		// host with SNI stripped (see Hosts/CertVerify).
-		"discuss.huggingface.co":               "",
-		"embed.nicovideo.jp":                   "",
-		"external-content.duckduckgo.com":      "",
-		"f-droid.org":                          "",
-		"fdroid.org":                           "",
-		"forum.f-droid.org":                    "",
-		"fra-storage.proton.me":                "",
-		"gemini.google.com":                    "",
-		"get.docker.io":                        "",
-		"gql.twitch.tv":                        "",
-		"graphql.api.dailymotion.com":          "",
+		"discuss.huggingface.co":          "",
+		"embed.nicovideo.jp":              "",
+		"external-content.duckduckgo.com": "",
+		"f-droid.org":                     "",
+		"fdroid.org":                      "",
+		"forum.f-droid.org":               "",
+		"fra-storage.proton.me":           "",
+		"gemini.google.com":               "",
+		"get.docker.io":                   "",
+		"gql.twitch.tv":                   "",
+		// CloudFront picks the distribution by Host header but requires an SNI
+		// that matches one of its certificates. graphql.api.dailymotion.com is
+		// a CloudFront-only host, so stripping SNI fails (alert 40) and sending
+		// its real SNI is reset by the GFW. d2is9o3959y6go.cloudfront.net is the
+		// distribution's own name: the handshake completes under the
+		// CN=*.cloudfront.net leaf while Host still routes to dailymotion.
+		// Probed 2026-10-29 (400 from the graphql app on GET /, not a CDN 403).
+		"graphql.api.dailymotion.com":          "d2is9o3959y6go.cloudfront.net",
 		"guce.yahoo.com":                       "guce.yahoo.com",
 		"hello.vrchat.com":                     "",
 		"hub.docker.com":                       "",
@@ -252,18 +271,13 @@ var builtinRules = &Rules{
 		"*.objects-origin.githubusercontent.com": []interface{}{"*.actions.githubusercontent.com", "actions.githubusercontent.com"},
 		// Live leaf (SNI-stripped Proton hosts) presents *.proton.me / *.pr.tn —
 		// the old protonmail.com allowlist rejected every proton.me subdomain.
-		"*.proton.me":       []interface{}{"*.proton.me", "proton.me", "*.pr.tn", "pr.tn", "*.storage.proton.me", "*.pm.me", "*.protonmail.ch", "*.protonmail.com", "protonmail.com"},
-		"*.redd.it":         []interface{}{"*.reddit.com", "reddit.com"},
-		"*redd.it":          []interface{}{"*.reddit.com", "reddit.com"},
-		"*.redditmedia.com": []interface{}{"*.reddit.com", "reddit.com"},
-		"*redditmedia.com":  []interface{}{"*.reddit.com", "reddit.com"},
-		"*redditstatic.com": []interface{}{"*.reddit.com", "reddit.com"},
-		"*ggpht.com":        []interface{}{"*.google.cn", "google.cn"},
-		"*google.com":       "g.cn",
-		"*google.com.hk":    "g.cn",
-		"*gstatic.com":      "g.cn",
-		"*youtube.com":      []interface{}{"*.google.cn", "google.cn"},
-		"*ytimg.com":        []interface{}{"*.google.cn", "google.cn"},
+		"*.proton.me":    []interface{}{"*.proton.me", "proton.me", "*.pr.tn", "pr.tn", "*.storage.proton.me", "*.pm.me", "*.protonmail.ch", "*.protonmail.com", "protonmail.com"},
+		"*ggpht.com":     []interface{}{"*.google.cn", "google.cn"},
+		"*google.com":    "g.cn",
+		"*google.com.hk": "g.cn",
+		"*gstatic.com":   "g.cn",
+		"*youtube.com":   []interface{}{"*.google.cn", "google.cn"},
+		"*ytimg.com":     []interface{}{"*.google.cn", "google.cn"},
 		// android/blogger/youtu.be share the g.cn front with youtube — the old
 		// healthdatanexus.ai allowlist is a dead front and rejects the real cert.
 		"*android.com":   []interface{}{"*.google.cn", "google.cn", "g.cn", "*.g.cn"},
@@ -305,19 +319,20 @@ var builtinRules = &Rules{
 		"ig.me":               []interface{}{"*.instagram.com", "*.cdninstagram.com", "*.igsonar.com", "cdninstagram.com", "igsonar.com", "instagram.com"},
 		"instagr.am":          []interface{}{"*.instagram.com", "*.cdninstagram.com", "*.igsonar.com", "cdninstagram.com", "igsonar.com", "instagram.com"},
 		"mega.io":             []interface{}{"*.static.mega.co.nz", "static.mega.co.nz"},
-		"redditstatic.com":    []interface{}{"*.reddit.com", "reddit.com"},
 		"*scratch.mit.edu":    []interface{}{"d.sni-645-default.ssl.fastly.net"},
 		"*sukebei.nyaa.si":    false,
 		// These SNI-stripped fronts currently return empty-SAN / honeypot leaves
 		// (CN=fallback.wgcz.net, please-go-away, bare IP). Disable verify so the
 		// tunnel still opens; Hosts IPs may need a later refresh.
-		"*okx.com":                    false,
-		"*spotify.com":                false,
-		"open.spotify.com":            false,
-		"*xnxx.com":                   false,
-		"*xvideos.com":                false,
-		"*xvideos.red":                false,
-		"graphql.api.dailymotion.com": false,
+		"*okx.com":         false,
+		"*spotify.com":     false,
+		"open.spotify.com": false,
+		"*xnxx.com":        false,
+		"*xvideos.com":     false,
+		"*xvideos.red":     false,
+		// The CloudFront distribution name is only rewritten into the SNI; the
+		// leaf it serves is Amazon's shared CN=*.cloudfront.net.
+		"graphql.api.dailymotion.com": []interface{}{"*.cloudfront.net", "cloudfront.net"},
 		// Cealing-Host 1.1.4.53 strips SNI on *.googlevideo.com, but Google's
 		// empty-SNI default vhost answers "invalid2.invalid" (CN=No SNI
 		// provided, probed 2026-10-28), so upstream's rule as-is would fail
@@ -330,7 +345,6 @@ var builtinRules = &Rules{
 		"*tg.dev":               []interface{}{"*.telegram.org", "telegram.org"},
 		"www.google.com":        "g.cn",
 		"www.gstatic.com":       "g.cn",
-		"www.redditstatic.com":  []interface{}{"*.reddit.com", "reddit.com"},
 		"*youtu.be":             []interface{}{"*.google.cn", "google.cn", "g.cn", "*.g.cn"},
 		"*youtube-nocookie.com": []interface{}{"*.google.cn", "google.cn", "g.cn", "*.g.cn"},
 	},
@@ -413,10 +427,6 @@ var builtinRules = &Rules{
 		"*proton.me":              "185.70.42.45",
 		"*pximg.net":              "210.140.139.133",
 		"*quora.com":              "162.159.152.17",
-		"*redd.it":                "146.75.33.140",
-		"*reddit.com":             "146.75.33.140",
-		"*redditmedia.com":        "146.75.33.140",
-		"*redditstatic.com":       "146.75.33.140",
 		"*rfi.fr":                 "118.214.247.61",
 		"*rumble.com":             "205.220.231.24",
 		"*rutube.ru":              "109.238.90.239",
@@ -522,13 +532,11 @@ var builtinRules = &Rules{
 		"gemini.google.com":               "47.102.115.14",
 		"get.docker.io":                   "elb-io.us-east-1.aws.dckr.io",
 		"gql.twitch.tv":                   "151.101.194.167",
-		// 1.1.4.55's replacement front (18.65.14.4, a dailymotion CloudFront
-		// edge) refuses TCP from CN — errno 111, probed 2026-10-29 from a
-		// Tencent Cloud GZ VPS — and every dailymotion CF edge answers an
-		// empty-SNI handshake with alert 40, so no working front exists for
-		// this SNI-stripped rule today. Kept at upstream's value pending a
-		// re-probe rather than left on the equally dead 34.84.14.157.
-		"graphql.api.dailymotion.com": "18.65.14.4",
+		// Dial the distribution's own name instead of an edge IP: CloudFront
+		// rotates all four 18.245.86.x edges per resolver answer, while the
+		// d2is9o3959y6go.cloudfront.net hostname stays valid. Upstream's
+		// 18.65.14.4 belongs to a different (dead) distribution.
+		"graphql.api.dailymotion.com": "d2is9o3959y6go.cloudfront.net",
 		"guce.yahoo.com":              "guce.yahoo.com",
 		"hello.vrchat.com":            "198.185.159.145",
 		"hub.docker.com":              "hub-origin.docker.com",
