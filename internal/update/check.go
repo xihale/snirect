@@ -2,13 +2,10 @@ package update
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 )
 
@@ -180,94 +177,4 @@ func AssetName(goos, goarch, tag string) string {
 		ext = ".exe"
 	}
 	return "snirect-" + goos + "-" + goarch + ext
-}
-
-// Download fetches info.AssetURL into dest, verifying SHA-256 against
-// checksums.txt from the same release. Refuses to install if either the
-// checksum file or the matching line is missing.
-func (c *Client) Download(ctx context.Context, info *Info, dest string) (err error) {
-	if info == nil || info.AssetURL == "" {
-		return fmt.Errorf("no release asset for this platform")
-	}
-	if info.ChecksumsURL == "" {
-		return fmt.Errorf("release has no checksums.txt")
-	}
-	ua := "snirect/" + info.Current + " (+https://github.com/" + repoOwner + "/" + repoName + ")"
-
-	want, err := c.fetchChecksum(ctx, info.ChecksumsURL, info.AssetName, ua)
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.get(ctx, info.AssetURL, ua)
-	if err != nil {
-		return fmt.Errorf("download %s: %w", info.AssetName, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download %s: %s", info.AssetName, resp.Status)
-	}
-
-	f, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = f.Close()
-		if err != nil {
-			_ = os.Remove(dest)
-		}
-	}()
-
-	h := sha256.New()
-	var n int64
-	n, err = io.Copy(io.MultiWriter(f, h), io.LimitReader(resp.Body, maxAssetBytes+1))
-	if err != nil {
-		err = fmt.Errorf("download %s: %w", info.AssetName, err)
-		return err
-	}
-	if n > maxAssetBytes {
-		err = fmt.Errorf("download %s: exceeds %d bytes", info.AssetName, maxAssetBytes)
-		return err
-	}
-	got := hex.EncodeToString(h.Sum(nil))
-	if !strings.EqualFold(got, want) {
-		err = fmt.Errorf("sha256 mismatch for %s: got %s want %s", info.AssetName, got, want)
-		return err
-	}
-	return nil
-}
-
-func (c *Client) fetchChecksum(ctx context.Context, url, name, ua string) (string, error) {
-	resp, err := c.get(ctx, url, ua)
-	if err != nil {
-		return "", fmt.Errorf("download checksums.txt: %w", err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
-	if err != nil {
-		return "", fmt.Errorf("download checksums.txt: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download checksums.txt: %s", resp.Status)
-	}
-	sum, ok := parseChecksums(string(body), name)
-	if !ok {
-		return "", fmt.Errorf("checksums.txt has no entry for %s", name)
-	}
-	return sum, nil
-}
-
-func parseChecksums(text, name string) (string, bool) {
-	for _, line := range strings.Split(text, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		file := strings.TrimPrefix(fields[1], "*")
-		if file == name && len(fields[0]) == 64 {
-			return fields[0], true
-		}
-	}
-	return "", false
 }

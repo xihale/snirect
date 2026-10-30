@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"time"
@@ -21,6 +22,9 @@ type Client struct {
 	HTTP    *http.Client
 	// Do, if set, replaces HTTP.Do. Tests inject this to avoid the network.
 	Do func(*http.Request) (*http.Response, error)
+	// Progress, when set, receives asset-download progress and retry notices.
+	// nil keeps the download silent.
+	Progress io.Writer
 }
 
 const defaultAPIBase = "https://api.github.com"
