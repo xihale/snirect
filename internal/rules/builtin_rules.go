@@ -2,7 +2,7 @@
 // LoadRules() into the running binary. No runtime fetching or codegen.
 //
 // AlterHostname/Hosts are synced from Cealing-Host releases (currently
-// 1.1.4.55) with these adaptations: browser-only (#) and disabled (^) rules
+// 1.1.4.57) with these adaptations: browser-only (#) and disabled (^) rules
 // skipped, $ prefixes stripped, IPv6-only hosts dropped (alter_hostname
 // kept), empty hosts (127.0.0.1) skipped, and t.me/telegram.me kept as the
 // precise "*.t.me"+"t.me" split instead of upstream's "*t.me" suffix form
@@ -22,6 +22,29 @@
 // answer their Host headers, so the removals are mirrored here. Front IPs are
 // re-probed when a host fails; the rest of the rule set stays verbatim from
 // upstream.
+//
+// 1.1.4.57 (synced 2026-10-30, probed live from a Tencent Cloud GZ VPS and a
+// CN Unicom line): Telegram keeps the 149.154.166.110 DC pin — upstream's new
+// 169.155.57.97 is likewise a live Telegram DC serving every *.telegram.org
+// host, so either works. Twitch: upstream collapsed panels/passport into the
+// Fastly *twitch.tv wildcard, but that edge 421s both vhosts, so their
+// CloudFront pins stay; assets.twitch.tv picked up upstream's
+// static.twitchcdn.net SNI rewrite (the empty-SNI path still completes under
+// the shared *.cloudfront.net leaf, the rewrite presents CN=assets.twitch.tv);
+// irc-ws moved to Twitch's own IRC edge 44.226.132.122 (the old CloudFront
+// path now 403s the vhost), with its rotating twitchircedge.twitch.a2z.com
+// leaf allowlisted. graphql.api.dailymotion.com stays on the CloudFront-alias
+// SNI — upstream's re-pin (18.65.14.65) is still empty-SNI, which
+// handshake-fails on CloudFront. Upstream's new geminiweb-pa.clients6.google.com
+// pin is deliberately not adopted: a reachable risk-check RPC lets Google
+// judge the CN exit and region-block Gemini (observed 2026-10-28); the host
+// keeps riding the *google.com GFE front. New families adopted after live
+// probes: bsky.app (api answers /xrpc/_health 200 on its pin, status presents
+// Vercel's no-sni leaf, public/web-cdn ride bunny's *.b-cdn.net leaf),
+// urbandictionary.com, and copilot.microsoft.com (Hosts-only dial of the name
+// copilot.com; its SNI-bearing ClientHello was reset from the Tencent DC line
+// but passes from Unicom). arena.ai is skipped: upstream's front is an
+// IPv6-only Hetzner host and the apex answers directly via Cloudflare.
 //
 // Two exceptions go past upstream's pin:
 //   - graphql.api.dailymotion.com is CloudFront-only, so it keeps the Host but
@@ -57,6 +80,7 @@ var builtinRules = &Rules{
 		"*bbci.co.uk":             "",
 		"*behance.net":            "behance.net",
 		"*bilibili.tv":            "bilibili.tv",
+		"*bsky.app":               "",
 		"*blogger.com":            "g.cn",
 		"*character.ai":           "",
 		"*claude.ai":              "claude.ai",
@@ -119,57 +143,62 @@ var builtinRules = &Rules{
 		// (GFE), 1.1.1.1 and 104.16.89.20 all drop the handshake too, probed
 		// 2026-10-29. The rules are dropped rather than left failing so a downstream
 		// proxy can handle reddit; see the removed Hosts/CertVerify entries.
-		"*rfi.fr":                  "",
-		"*rumble.com":              "",
-		"*rutube.ru":               "",
-		"*scratch.mit.edu":         "",
-		"*spotify.com":             "spotify.com",
-		"*startpage.com":           "",
-		"*steamcommunity.com":      "",
-		"*sukebei.nyaa.si":         "",
-		"*telegram.org":            "",
-		"*telesco.pe":              "",
-		"*tg.dev":                  "",
-		"*thetvdb.com":             "",
-		"*tumblr.com":              "",
-		"*twitch.tv":               "",
-		"*v2ex.com":                "",
-		"*vercel.app":              "vercel.com",
-		"*vimeo.com":               "",
-		"*whatsapp.com":            "",
-		"*whatsapp.net":            "",
-		"*wikibooks.org":           "",
-		"*wikidata.org":            "",
-		"*wikifunctions.org":       "",
-		"*wikimedia.org":           "",
-		"*wikinews.org":            "",
-		"*wikipedia.org":           "",
-		"*wikiquote.org":           "",
-		"*wikisource.org":          "",
-		"*wikiversity.org":         "",
-		"*wikivoyage.org":          "",
-		"*wiktionary.org":          "",
-		"*xhamster.com":            "zh.xhamster.com",
-		"*xhamster42.desi":         "zh.xhamster42.desi",
-		"*xnxx.com":                "",
-		"*xvideos.com":             "",
-		"*xvideos.red":             "",
-		"*youtu.be":                "g.cn",
-		"*youtube-nocookie.com":    "g.cn",
-		"*youtube.com":             "g.cn",
-		"*z-lib.help":              "",
-		"*z-library.sk":            "",
-		"a5.behance.net":           "a5.behance.net",
-		"account-api.proton.me":    "",
-		"account.nicovideo.jp":     "",
-		"account.proton.me":        "",
-		"alive.github.com":         "",
-		"collector.github.com":     "",
-		"api.audiomack.com":        "",
-		"api.github.com":           "",
-		"ask.vrchat.com":           "",
-		"assets.audiomack.com":     "",
-		"assets.twitch.tv":         "",
+		"*rfi.fr":               "",
+		"*rumble.com":           "",
+		"*rutube.ru":            "",
+		"*scratch.mit.edu":      "",
+		"*spotify.com":          "spotify.com",
+		"*startpage.com":        "",
+		"*steamcommunity.com":   "",
+		"*sukebei.nyaa.si":      "",
+		"*telegram.org":         "",
+		"*telesco.pe":           "",
+		"*tg.dev":               "",
+		"*thetvdb.com":          "",
+		"*tumblr.com":           "",
+		"*twitch.tv":            "",
+		"*urbandictionary.com":  "",
+		"*v2ex.com":             "",
+		"*vercel.app":           "vercel.com",
+		"*vimeo.com":            "",
+		"*whatsapp.com":         "",
+		"*whatsapp.net":         "",
+		"*wikibooks.org":        "",
+		"*wikidata.org":         "",
+		"*wikifunctions.org":    "",
+		"*wikimedia.org":        "",
+		"*wikinews.org":         "",
+		"*wikipedia.org":        "",
+		"*wikiquote.org":        "",
+		"*wikisource.org":       "",
+		"*wikiversity.org":      "",
+		"*wikivoyage.org":       "",
+		"*wiktionary.org":       "",
+		"*xhamster.com":         "zh.xhamster.com",
+		"*xhamster42.desi":      "zh.xhamster42.desi",
+		"*xnxx.com":             "",
+		"*xvideos.com":          "",
+		"*xvideos.red":          "",
+		"*youtu.be":             "g.cn",
+		"*youtube-nocookie.com": "g.cn",
+		"*youtube.com":          "g.cn",
+		"*z-lib.help":           "",
+		"*z-library.sk":         "",
+		"a5.behance.net":        "a5.behance.net",
+		"account-api.proton.me": "",
+		"account.nicovideo.jp":  "",
+		"account.proton.me":     "",
+		"alive.github.com":      "",
+		"collector.github.com":  "",
+		"api.audiomack.com":     "",
+		"api.github.com":        "",
+		"ask.vrchat.com":        "",
+		"assets.audiomack.com":  "",
+		// 1.1.4.57: CloudFront requires an SNI matching the distribution's
+		// certs — the rewrite presents the real CN=assets.twitch.tv leaf
+		// (assets.twitch.tv / static.twitchcdn.net SANs, probed 2026-10-30),
+		// same class as the graphql.api.dailymotion.com workaround.
+		"assets.twitch.tv":         "static.twitchcdn.net",
 		"auth.docker.io":           "",
 		"blog.docker.io":           "",
 		"business.whatsapp.com":    "",
@@ -202,7 +231,6 @@ var builtinRules = &Rules{
 		"fra-storage.proton.me":           "",
 		"gemini.google.com":               "",
 		"get.docker.io":                   "",
-		"gql.twitch.tv":                   "",
 		// CloudFront picks the distribution by Host header but requires an SNI
 		// that matches one of its certificates. graphql.api.dailymotion.com is
 		// a CloudFront-only host, so stripping SNI fails (alert 40) and sending
@@ -223,7 +251,6 @@ var builtinRules = &Rules{
 		"live.nicovideo.jp":                    "",
 		"live2.nicovideo.jp":                   "",
 		"lumo.proton.me":                       "",
-		"m.twitch.tv":                          "",
 		"mail.proton.me":                       "",
 		"meet.proton.me":                       "",
 		"music.audiomack.com":                  "",
@@ -284,6 +311,11 @@ var builtinRules = &Rules{
 		"*audiomack.com": []interface{}{"*.cloudfront.net", "cloudfront.net"},
 		"*bbc.co.uk":     []interface{}{"*.cdn.cyberarena.at", "cdn.cyberarena.at"},
 		"*bbci.co.uk":    []interface{}{"*.cdn.cyberarena.at", "cdn.cyberarena.at"},
+		// 1.1.4.57 bsky.app family: the wild pin serves CN=bsky.app, api
+		// serves *.bsky.app, public/web-cdn ride bunny's shared *.b-cdn.net
+		// leaf, and status sits behind Vercel's no-SNI leaf (same class as the
+		// huggingface status entry).
+		"*bsky.app": []interface{}{"bsky.app", "*.bsky.app", "*.b-cdn.net", "b-cdn.net", "no-sni.vercel-infra.com"},
 		// CDN hosts present their own *.cdn-telegram.org leaf (not *.telegram.org).
 		"*cdn-telegram.org": []interface{}{"*.cdn-telegram.org", "cdn-telegram.org", "*.telegram.org", "telegram.org"},
 		"*ig.me":            []interface{}{"*.instagram.com", "*.cdninstagram.com", "*.igsonar.com", "cdninstagram.com", "igsonar.com", "instagram.com"},
@@ -294,7 +326,10 @@ var builtinRules = &Rules{
 		"*t.me":             []interface{}{"*.telegram.org", "telegram.org"},
 		// Live leaf at the Fastly IP is *.twitch.tv; assets.* still sits on
 		// CloudFront — keep both so either front cert passes.
-		"*twitch.tv":            []interface{}{"*.twitch.tv", "twitch.tv", "*.cloudfront.net", "cloudfront.net"},
+		"*twitch.tv": []interface{}{"*.twitch.tv", "twitch.tv", "*.cloudfront.net", "cloudfront.net"},
+		// 1.1.4.57 urbandictionary: the wild pin's front presents bunny's
+		// shared *.b-cdn.net leaf; my. presents the api. leaf directly.
+		"*urbandictionary.com":  []interface{}{"*.b-cdn.net", "b-cdn.net", "api.urbandictionary.com"},
 		"*z-lib.help":           []interface{}{"*.go-to-library.sk", "go-to-library.sk"},
 		"*z-library.sk":         []interface{}{"*.go-to-library.sk", "go-to-library.sk"},
 		"ask.vrchat.com":        []interface{}{"*.discourse.org"},
@@ -318,9 +353,13 @@ var builtinRules = &Rules{
 		"identity.flickr.com": []interface{}{"flickr.com", "*.flickr.com", "flic.kr"},
 		"ig.me":               []interface{}{"*.instagram.com", "*.cdninstagram.com", "*.igsonar.com", "cdninstagram.com", "igsonar.com", "instagram.com"},
 		"instagr.am":          []interface{}{"*.instagram.com", "*.cdninstagram.com", "*.igsonar.com", "cdninstagram.com", "igsonar.com", "instagram.com"},
-		"mega.io":             []interface{}{"*.static.mega.co.nz", "static.mega.co.nz"},
-		"*scratch.mit.edu":    []interface{}{"d.sni-645-default.ssl.fastly.net"},
-		"*sukebei.nyaa.si":    false,
+		// 1.1.4.57 moved irc-ws to Twitch's IRC edge; the live leaf is
+		// websocket-N.<region>.prod.twitchircedge.twitch.a2z.com (probed
+		// 2026-10-30), so the suffix pattern stays rotation-safe.
+		"irc-ws.chat.twitch.tv": []interface{}{"*.twitchircedge.twitch.a2z.com"},
+		"mega.io":               []interface{}{"*.static.mega.co.nz", "static.mega.co.nz"},
+		"*scratch.mit.edu":      []interface{}{"d.sni-645-default.ssl.fastly.net"},
+		"*sukebei.nyaa.si":      false,
 		// These SNI-stripped fronts currently return empty-SAN / honeypot leaves
 		// (CN=fallback.wgcz.net, please-go-away, bare IP). Disable verify so the
 		// tunnel still opens; Hosts IPs may need a later refresh.
@@ -349,22 +388,27 @@ var builtinRules = &Rules{
 		"*youtube-nocookie.com": []interface{}{"*.google.cn", "google.cn", "g.cn", "*.g.cn"},
 	},
 	Hosts: map[string]string{
-		"*.ggpht.com":            "64.233.160.142",
-		"*.ig.me":                "157.240.27.174",
-		"*.media.tumblr.com":     "192.0.77.3",
-		"*.t.me":                 "149.154.166.110",
-		"*.w.wiki":               "185.15.59.224",
-		"*amazon.co.jp":          "13.35.219.115",
-		"*android.com":           "64.233.160.142",
-		"*api.mega.co.nz":        "66.203.125.15",
-		"*apkmirror.com":         "104.17.67.215",
-		"*archive.org":           "207.241.237.2",
-		"*archiveofourown.org":   "104.20.8.2",
-		"*audiomack.com":         "3.167.200.113",
-		"*bbc.co.uk":             "23.77.21.232",
-		"*bbc.com":               "146.75.36.81",
-		"*bbci.co.uk":            "23.77.21.232",
-		"*blogger.com":           "64.233.160.142",
+		"*.ggpht.com":          "64.233.160.142",
+		"*.ig.me":              "157.240.27.174",
+		"*.media.tumblr.com":   "192.0.77.3",
+		"*.t.me":               "149.154.166.110",
+		"*.w.wiki":             "185.15.59.224",
+		"*amazon.co.jp":        "13.35.219.115",
+		"*android.com":         "64.233.160.142",
+		"*api.mega.co.nz":      "66.203.125.15",
+		"*apkmirror.com":       "104.17.67.215",
+		"*archive.org":         "207.241.237.2",
+		"*archiveofourown.org": "104.20.8.2",
+		"*audiomack.com":       "3.167.200.113",
+		"*bbc.co.uk":           "23.77.21.232",
+		"*bbc.com":             "146.75.36.81",
+		"*bbci.co.uk":          "23.77.21.232",
+		"*blogger.com":         "64.233.160.142",
+		// 1.1.4.57: bsky.app family, probed 2026-10-30 from a Tencent Cloud GZ
+		// VPS and a CN Unicom line. The empty-SNI wildcard serves the real
+		// CN=bsky.app leaf (homepage 200); api/public/status/web-cdn carry
+		// their own pins below.
+		"*bsky.app":              "18.217.21.49",
 		"*character.ai":          "104.18.223.226",
 		"*dailymotion.com":       "195.8.215.140",
 		"*discord.com":           "162.159.136.232",
@@ -440,13 +484,17 @@ var builtinRules = &Rules{
 		// own DC IP serves all *.telegram.org hosts on empty SNI with the real
 		// GoDaddy leaf (*.telegram.org, valid to 2027-03): api 302, getMe 404
 		// JSON, web 200, t.me/telegram.me/tg.dev 302 — probed live from a
-		// Tencent Cloud GZ VPS.
+		// Tencent Cloud GZ VPS. 1.1.4.57 moved upstream to 169.155.57.97, which
+		// is likewise a live Telegram DC answering the same hosts with the same
+		// leaf (probed 2026-10-30) — either DC IP works; snirect keeps
+		// 149.154.166.110.
 		"*telegram.org":         "149.154.166.110",
 		"*telesco.pe":           "149.154.166.110",
 		"*tg.dev":               "149.154.166.110",
 		"*thetvdb.com":          "13.35.222.88",
 		"*tumblr.com":           "192.0.77.40",
 		"*twitch.tv":            "151.101.194.167",
+		"*urbandictionary.com":  "107.150.176.1",
 		"*v2ex.com":             "172.66.137.6",
 		"*vercel.app":           "64.29.17.193",
 		"*vimeo.com":            "162.159.138.60",
@@ -481,10 +529,14 @@ var builtinRules = &Rules{
 		// github.com) on the empty-SNI default vhost of the *github.com web
 		// edge. Pin each to an edge whose vhost tier serves it: the beacon/ws
 		// pair at 140.82.114.26 (alive also answers collector's Host).
-		"alive.github.com":      "140.82.114.26",
-		"collector.github.com":  "140.82.114.26",
-		"api.audiomack.com":     "3.167.200.113",
-		"api.github.com":        "20.205.243.168",
+		"alive.github.com":     "140.82.114.26",
+		"collector.github.com": "140.82.114.26",
+		"api.audiomack.com":    "3.167.200.113",
+		"api.github.com":       "20.205.243.168",
+		// 1.1.4.57: appview answers /xrpc/_health 200 on this pin (the wildcard
+		// edge holds the connection without responding); handshake presents
+		// the *.bsky.app leaf.
+		"api.bsky.app":          "108.179.136.10",
 		"ask.vrchat.com":        "216.66.8.43",
 		"assets.audiomack.com":  "3.167.200.113",
 		"assets.twitch.tv":      "3.167.200.113",
@@ -512,12 +564,18 @@ var builtinRules = &Rules{
 		"codeload.github.com":               "20.205.243.165",
 		"community.github.com":              "140.82.114.17",
 		"consent.yahoo.com":                 "consent.yahoo.com",
-		"docker.io":                         "elb-io.us-east-1.aws.dckr.io",
-		"docs.docker.io":                    "elb-io.us-east-1.aws.dckr.io",
-		"docs-editor.proton.me":             "185.70.42.70",
-		"docs-rts.proton.me":                "185.70.42.71",
-		"docs.github.com":                   "185.199.110.154",
-		"docs.proton.me":                    "185.70.42.69",
+		// 1.1.4.57: Hosts-only dial of the name copilot.com (Azure Front
+		// Door); SNI stays copilot.microsoft.com and Microsoft presents the
+		// real CN=copilot.microsoft.com leaf (200, probed 2026-10-30). The
+		// ClientHello is SNI-sensitive: reset from a Tencent Cloud DC line,
+		// passes from a Unicom residential line.
+		"copilot.microsoft.com": "copilot.com",
+		"docker.io":             "elb-io.us-east-1.aws.dckr.io",
+		"docs.docker.io":        "elb-io.us-east-1.aws.dckr.io",
+		"docs-editor.proton.me": "185.70.42.70",
+		"docs-rts.proton.me":    "185.70.42.71",
+		"docs.github.com":       "185.199.110.154",
+		"docs.proton.me":        "185.70.42.69",
 		// 1.1.4.55 splits discuss off *huggingface.co: the Discourse host
 		// answers Host: discuss.huggingface.co on empty SNI with a
 		// *.hosted-by-discourse.com leaf (200, probed 2026-10-29).
@@ -531,7 +589,6 @@ var builtinRules = &Rules{
 		"fra-storage.proton.me":           "185.205.70.10",
 		"gemini.google.com":               "47.102.115.14",
 		"get.docker.io":                   "elb-io.us-east-1.aws.dckr.io",
-		"gql.twitch.tv":                   "151.101.194.167",
 		// Dial the distribution's own name instead of an edge IP: CloudFront
 		// rotates all four 18.245.86.x edges per resolver answer, while the
 		// d2is9o3959y6go.cloudfront.net hostname stays valid. Upstream's
@@ -546,15 +603,19 @@ var builtinRules = &Rules{
 		"ig.me":               "157.240.27.174",
 		"images.prismic.io":   "151.101.78.208",
 
-		"index.docker.io":                      "registry.ipv4.docker.com",
-		"irc-ws.chat.twitch.tv":                "3.167.200.113",
+		"index.docker.io": "registry.ipv4.docker.com",
+		// 1.1.4.57: Twitch's own IRC edge; the old 3.167.200.113 CloudFront
+		// path now 403s the vhost (probed 2026-10-30). Leaf is the rotating
+		// websocket-N.<region>.prod.twitchircedge.twitch.a2z.com — allowlisted
+		// under CertVerify.
+		"irc-ws.chat.twitch.tv":                "44.226.132.122",
 		"live.nicovideo.jp":                    "3.167.200.113",
 		"live2.nicovideo.jp":                   "3.167.200.113",
 		"lumo.proton.me":                       "185.70.42.51",
-		"m.twitch.tv":                          "151.101.194.167",
 		"mail.proton.me":                       "185.70.42.37",
 		"meet.proton.me":                       "185.70.42.118",
 		"music.audiomack.com":                  "3.167.200.113",
+		"my.urbandictionary.com":               "5.161.34.136",
 		"notary.docker.io":                     "elb-io.us-east-1.aws.dckr.io",
 		"nvapi.nicovideo.jp":                   "3.167.200.113",
 		"objects-origin.githubusercontent.com": "140.82.113.22",
@@ -563,6 +624,7 @@ var builtinRules = &Rules{
 		"pass.proton.me":                       "185.70.42.63",
 		"passport.twitch.tv":                   "3.167.200.113",
 		"polymarket.com":                       "64.239.109.1",
+		"public.api.bsky.app":                  "84.17.37.214",
 		"production.cloudflare.docker.com":     "104.16.100.215",
 		"registry-1.docker.io":                 "registry.ipv4.docker.com",
 		"registry.docker.io":                   "registry.ipv4.docker.com",
@@ -572,7 +634,10 @@ var builtinRules = &Rules{
 		"sheets.proton.me":                     "185.70.42.69",
 		"sp.nicovideo.jp":                      "3.167.200.113",
 		"sso.proton.me":                        "185.70.42.20",
-		"status.docker.io":                     "elb-io.us-east-1.aws.dckr.io",
+		// 1.1.4.57: Vercel answers Host: status.bsky.app on its no-SNI default
+		// leaf (200) — allowlisted under the *bsky.app CertVerify entry.
+		"status.bsky.app":  "76.76.21.164",
+		"status.docker.io": "elb-io.us-east-1.aws.dckr.io",
 		// 1.1.4.55 splits status off *huggingface.co: Better Uptime serves it
 		// under the status.singpass.gov.sg SNI (200, probed 2026-10-29).
 		"status.huggingface.co": "statuspage.betteruptime.com",
@@ -606,10 +671,14 @@ var builtinRules = &Rules{
 		// Same bounce class as upload above, but for release-asset *uploads*
 		// (gh release upload / web attachments): the API plane at api's edge
 		// serves Host: uploads.github.com on empty SNI.
-		"uploads.github.com":    "20.205.243.168",
-		"upload.wikimedia.org":  "208.80.154.240",
-		"w.wiki":                "185.15.59.224",
-		"wallet.proton.me":      "194.0.147.12",
+		"uploads.github.com":   "20.205.243.168",
+		"upload.wikimedia.org": "208.80.154.240",
+		"w.wiki":               "185.15.59.224",
+		"wallet.proton.me":     "194.0.147.12",
+		// 1.1.4.57: bunny answers Host: web-cdn.bsky.app with the shared
+		// *.b-cdn.net leaf; a real asset fetch through the pin returned 200
+		// (the bare / path 403s — bunny denies directory roots, not the vhost).
+		"web-cdn.bsky.app":      "138.199.24.209",
 		"wktk.nicovideo.jp":     "3.167.200.113",
 		"www.docker.io":         "elb-io.us-east-1.aws.dckr.io",
 		"www.f-droid.org":       "37.218.243.72",
