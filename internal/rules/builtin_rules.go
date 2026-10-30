@@ -46,6 +46,20 @@
 // but passes from Unicom). arena.ai is skipped: upstream's front is an
 // IPv6-only Hetzner host and the apex answers directly via Cloudflare.
 //
+// 1.1.4.58 (synced 2026-10-30, probed from the same two lines): adopted the
+// X/Twitter family (151.101.2.146 serves x.com + twitter.com Hosts on empty
+// SNI with x.com's own leaf, whose SANs cover *.twitter.com / *.x.com / t.co,
+// and 151.101.0.159 serves *twimg.com under CN=*.twimg.com — all pass standard
+// verification, so no CertVerify entries), *bsky.social (52.203.70.156, real
+// bsky.social leaf), and bsky's cdn/video (169.150.207.211, bunny — covered by
+// the existing *bsky.app policy) and events (77.112.174.236, own leaf) pins.
+// public.api.bsky.app moved to upstream's fresh bunny node 185.111.111.157;
+// the 1.1.4.57-era 84.17.37.214 node timed out from the GZ VPS the next day.
+// Caveat from the probe session: hammering empty-SNI handshakes at the
+// Fastly/AWS fronts (151.101.x, 52.203.x) in a tight loop trips seconds-long
+// tarpits on the Unicom line; single handshakes minutes later complete in
+// <0.5s, so this is rate-based GFW probing, not a blocked front.
+//
 // Two exceptions go past upstream's pin:
 //   - graphql.api.dailymotion.com is CloudFront-only, so it keeps the Host but
 //     rewrites SNI to the distribution name (CloudFront requires a matching
@@ -81,6 +95,7 @@ var builtinRules = &Rules{
 		"*behance.net":            "behance.net",
 		"*bilibili.tv":            "bilibili.tv",
 		"*bsky.app":               "",
+		"*bsky.social":            "",
 		"*blogger.com":            "g.cn",
 		"*character.ai":           "",
 		"*claude.ai":              "claude.ai",
@@ -143,26 +158,31 @@ var builtinRules = &Rules{
 		// (GFE), 1.1.1.1 and 104.16.89.20 all drop the handshake too, probed
 		// 2026-10-29. The rules are dropped rather than left failing so a downstream
 		// proxy can handle reddit; see the removed Hosts/CertVerify entries.
-		"*rfi.fr":               "",
-		"*rumble.com":           "",
-		"*rutube.ru":            "",
-		"*scratch.mit.edu":      "",
-		"*spotify.com":          "spotify.com",
-		"*startpage.com":        "",
-		"*steamcommunity.com":   "",
-		"*sukebei.nyaa.si":      "",
-		"*telegram.org":         "",
-		"*telesco.pe":           "",
-		"*tg.dev":               "",
-		"*thetvdb.com":          "",
-		"*tumblr.com":           "",
-		"*twitch.tv":            "",
-		"*urbandictionary.com":  "",
-		"*v2ex.com":             "",
-		"*vercel.app":           "vercel.com",
-		"*vimeo.com":            "",
-		"*whatsapp.com":         "",
-		"*whatsapp.net":         "",
+		"*rfi.fr":              "",
+		"*rumble.com":          "",
+		"*rutube.ru":           "",
+		"*scratch.mit.edu":     "",
+		"*spotify.com":         "spotify.com",
+		"*startpage.com":       "",
+		"*steamcommunity.com":  "",
+		"*sukebei.nyaa.si":     "",
+		"*telegram.org":        "",
+		"*telesco.pe":          "",
+		"*tg.dev":              "",
+		"*thetvdb.com":         "",
+		"*tumblr.com":          "",
+		"*twitch.tv":           "",
+		"*twimg.com":           "",
+		"*twitter.com":         "",
+		"*urbandictionary.com": "",
+		"*v2ex.com":            "",
+		"*vercel.app":          "vercel.com",
+		"*vimeo.com":           "",
+		"*whatsapp.com":        "",
+		"*whatsapp.net":        "",
+		// "*.x.com" on purpose: upstream's bare "*x.com" suffix-matches any
+		// host ending in "x.com" (wix.com), MatchHost enforces the dot.
+		"*.x.com":               "",
 		"*wikibooks.org":        "",
 		"*wikidata.org":         "",
 		"*wikifunctions.org":    "",
@@ -408,7 +428,10 @@ var builtinRules = &Rules{
 		// VPS and a CN Unicom line. The empty-SNI wildcard serves the real
 		// CN=bsky.app leaf (homepage 200); api/public/status/web-cdn carry
 		// their own pins below.
-		"*bsky.app":              "18.217.21.49",
+		"*bsky.app": "18.217.21.49",
+		// 1.1.4.58: empty SNI presents the real CN=bsky.social leaf
+		// (SANs bsky.social / *.bsky.social, 302, probed 2026-10-30).
+		"*bsky.social":           "52.203.70.156",
 		"*character.ai":          "104.18.223.226",
 		"*dailymotion.com":       "195.8.215.140",
 		"*discord.com":           "162.159.136.232",
@@ -488,18 +511,28 @@ var builtinRules = &Rules{
 		// is likewise a live Telegram DC answering the same hosts with the same
 		// leaf (probed 2026-10-30) — either DC IP works; snirect keeps
 		// 149.154.166.110.
-		"*telegram.org":         "149.154.166.110",
-		"*telesco.pe":           "149.154.166.110",
-		"*tg.dev":               "149.154.166.110",
-		"*thetvdb.com":          "13.35.222.88",
-		"*tumblr.com":           "192.0.77.40",
-		"*twitch.tv":            "151.101.194.167",
+		"*telegram.org": "149.154.166.110",
+		"*telesco.pe":   "149.154.166.110",
+		"*tg.dev":       "149.154.166.110",
+		"*thetvdb.com":  "13.35.222.88",
+		"*tumblr.com":   "192.0.77.40",
+		"*twitch.tv":    "151.101.194.167",
+		// 1.1.4.58 X/Twitter family, probed 2026-10-30 from a Tencent Cloud GZ
+		// VPS and a CN Unicom line: 151.101.2.146 answers x.com / www.x.com /
+		// twitter.com Hosts on empty SNI (200 / 301 / 301) with x.com's own
+		// leaf (SANs *.twitter.com, *.x.com, t.co, twitter.com, x.com), and
+		// 151.101.0.159 answers *twimg.com under CN=*.twimg.com (pbs 400 on /
+		// is the CDN's normal root answer). All leaves chain publicly, so no
+		// CertVerify entries are needed.
+		"*twimg.com":            "151.101.0.159",
+		"*twitter.com":          "151.101.2.146",
 		"*urbandictionary.com":  "107.150.176.1",
 		"*v2ex.com":             "172.66.137.6",
 		"*vercel.app":           "64.29.17.193",
 		"*vimeo.com":            "162.159.138.60",
 		"*whatsapp.com":         "157.240.225.60",
 		"*whatsapp.net":         "157.240.225.60",
+		"*.x.com":               "151.101.2.146",
 		"*wikibooks.org":        "185.15.59.224",
 		"*wikidata.org":         "185.15.59.224",
 		"*wikifunctions.org":    "185.15.59.224",
@@ -557,13 +590,17 @@ var builtinRules = &Rules{
 		"oauth2.googleapis.com":             "64.233.160.142",
 		"calendar.proton.me":                "185.70.42.39",
 		"cdn-registry-1.docker.io":          "registry.ipv4.docker.com",
-		"cdn.jsdelivr.net":                  "104.16.89.20",
-		"cdn1.cdn-telegram.org":             "34.111.15.3",
-		"cdn4.cdn-telegram.org":             "34.111.35.152",
-		"cdn5.cdn-telegram.org":             "34.111.108.175",
-		"codeload.github.com":               "20.205.243.165",
-		"community.github.com":              "140.82.114.17",
-		"consent.yahoo.com":                 "consent.yahoo.com",
+		// 1.1.4.58: cdn (imgproxy, 200) and video ("Bluesky Video Service",
+		// 200) answer on empty SNI under bunny's shared *.b-cdn.net leaf —
+		// covered by the existing *bsky.app CertVerify entry.
+		"cdn.bsky.app":          "169.150.207.211",
+		"cdn.jsdelivr.net":      "104.16.89.20",
+		"cdn1.cdn-telegram.org": "34.111.15.3",
+		"cdn4.cdn-telegram.org": "34.111.35.152",
+		"cdn5.cdn-telegram.org": "34.111.108.175",
+		"codeload.github.com":   "20.205.243.165",
+		"community.github.com":  "140.82.114.17",
+		"consent.yahoo.com":     "consent.yahoo.com",
 		// 1.1.4.57: Hosts-only dial of the name copilot.com (Azure Front
 		// Door); SNI stays copilot.microsoft.com and Microsoft presents the
 		// real CN=copilot.microsoft.com leaf (200, probed 2026-10-30). The
@@ -579,9 +616,12 @@ var builtinRules = &Rules{
 		// 1.1.4.55 splits discuss off *huggingface.co: the Discourse host
 		// answers Host: discuss.huggingface.co on empty SNI with a
 		// *.hosted-by-discourse.com leaf (200, probed 2026-10-29).
-		"discuss.huggingface.co":          "hellohellohello.hosted-by-discourse.com",
-		"drive.proton.me":                 "185.70.42.40",
-		"embed.nicovideo.jp":              "3.167.200.113",
+		"discuss.huggingface.co": "hellohellohello.hosted-by-discourse.com",
+		"drive.proton.me":        "185.70.42.40",
+		"embed.nicovideo.jp":     "3.167.200.113",
+		// 1.1.4.58: own CN=events.bsky.app leaf (SAN events.bsky.app, 200,
+		// probed 2026-10-30) — passes standard verification.
+		"events.bsky.app":                 "77.112.174.236",
 		"external-content.duckduckgo.com": "20.43.160.189",
 		"f-droid.org":                     "37.218.243.72",
 		"fdroid.org":                      "37.218.243.72",
@@ -624,7 +664,7 @@ var builtinRules = &Rules{
 		"pass.proton.me":                       "185.70.42.63",
 		"passport.twitch.tv":                   "3.167.200.113",
 		"polymarket.com":                       "64.239.109.1",
-		"public.api.bsky.app":                  "84.17.37.214",
+		"public.api.bsky.app":                  "185.111.111.157",
 		"production.cloudflare.docker.com":     "104.16.100.215",
 		"registry-1.docker.io":                 "registry.ipv4.docker.com",
 		"registry.docker.io":                   "registry.ipv4.docker.com",
@@ -673,6 +713,7 @@ var builtinRules = &Rules{
 		// serves Host: uploads.github.com on empty SNI.
 		"uploads.github.com":   "20.205.243.168",
 		"upload.wikimedia.org": "208.80.154.240",
+		"video.bsky.app":       "169.150.207.211",
 		"w.wiki":               "185.15.59.224",
 		"wallet.proton.me":     "194.0.147.12",
 		// 1.1.4.57: bunny answers Host: web-cdn.bsky.app with the shared
