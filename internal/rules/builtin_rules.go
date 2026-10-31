@@ -499,8 +499,15 @@ var builtinRules = &Rules{
 		"*rutube.ru":              "109.238.90.239",
 		"*scratch.mit.edu":        "151.101.66.133",
 		"*startpage.com":          "67.63.60.231",
-		"*steamcommunity.com":     "184.50.187.66",
-		"*sukebei.nyaa.si":        "198.251.89.38",
+		// 184.50.187.66 is the only Steam front whose leaf (Valve DigiCert;
+		// SANs store/api/help/login/partner/support.steampowered.com,
+		// steamcommunity.com, www.valvesoftware.com; valid to 2027-02) covers
+		// steamcommunity.com — the Let's Encrypt leaves pinned for
+		// store.steampowered.com name only the store and answer a
+		// steamcommunity Host with 403. Empty-SNI Host: steamcommunity.com
+		// returned 200 from both a JP and a CN egress, probed 2026-10-31.
+		"*steamcommunity.com": "184.50.187.66",
+		"*sukebei.nyaa.si":    "198.251.89.38",
 		// Upstream's 45.192.12.153 Telegram front is gone: it answers every SNI
 		// with a Traefik default cert and 45.192.12.0/24 is shared hosting
 		// (cdnjs/wikipedia/cloudflare vhosts — probed 2026-10-28). Telegram's
@@ -681,17 +688,20 @@ var builtinRules = &Rules{
 		// 1.1.4.55 splits status off *huggingface.co: Better Uptime serves it
 		// under the status.singpass.gov.sg SNI (200, probed 2026-10-29).
 		"status.huggingface.co": "statuspage.betteruptime.com",
-		// Upstream's 23.39.61.133 store front is dead: TCP opens but the empty-SNI
-		// handshake aborts (remote error: tls: internal error, probed 2026-10-28).
-		// 184.50.187.66 (the Valve front pinned for *steamcommunity.com) does
-		// answer store on empty SNI, but it is Valve's China POP: it serves the
-		// CN storefront — CNY prices and store.cdn.queniuqe.com assets — to every
-		// client regardless of egress IP, so a non-CN user would silently get a
-		// foreign storefront. 23.217.182.113 is an Akamai edge that geo-routes
-		// per client IP: CN clients get CNY + queniuqe, other egress gets the
-		// global storefront (verified 2026-10-28: prices and CDN hosts match the
-		// unpinned direct fetch). Leaf is Let's Encrypt CN=store.steampowered.com
-		// (valid to 2027-01); 200 on empty SNI from both a JP and a CN egress.
+		// Upstream's 23.39.61.133 store front is dead for us (upstream issue
+		// #61): its default vhost — the one a stripped ClientHello lands on —
+		// aborts every handshake with TLS alert 80 (internal_error). The address
+		// itself is alive: an explicit SNI to the same IP still handshakes from
+		// a JP egress, while from CN the IP is dropped outright. Probed
+		// 2026-10-31 from JP and a Tencent Cloud GZ VPS.
+		// 23.217.182.113 answers the store on empty SNI with a Let's Encrypt
+		// leaf (CN=store.steampowered.com, SAN equal to that one name, valid to
+		// 2027-01) and 200s. The storefront geo is chosen per client IP, not per
+		// front: 23.217.182.113 and 184.50.187.66 both returned CNY plus the
+		// queniuqe video CDN from CN and JPY plus the fastly CDN from JP
+		// (probed 2026-10-31). What separates every candidate is latency only;
+		// 184.50.187.66 stays on *steamcommunity.com because its DigiCert leaf
+		// is the only one covering that host.
 		"store.steampowered.com": "23.217.182.113",
 		"support.github.com":     "185.199.108.133",
 		"t.me":                   "149.154.166.110",
