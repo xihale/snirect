@@ -35,8 +35,10 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Accept Android SDK licenses
+        # ubuntu-latest 预装 SDK 与 cmdline-tools；android-actions/setup-android@v3
+        # 会执行已从仓库移除的 `sdkmanager tools` 而失败，只保留其必要职责：接受 license。
+        run: yes | sdkmanager --licenses >/dev/null
 
       - name: Install NDK
         run: |
