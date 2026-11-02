@@ -14,6 +14,20 @@ import (
 	"github.com/xihale/snirect/internal/logger"
 )
 
+// privExec wraps a command with the available privilege escalation mechanism.
+// As root (proot/chroot/containers, where sudo is typically not installed)
+// commands run directly; otherwise they go through sudo; without either we
+// fail with an actionable error instead of "exec: sudo: not found".
+func privExec(name string, args ...string) (*exec.Cmd, error) {
+	if os.Geteuid() == 0 {
+		return exec.Command(name, args...), nil
+	}
+	if _, err := exec.LookPath("sudo"); err == nil {
+		return exec.Command("sudo", append([]string{name}, args...)...), nil
+	}
+	return nil, fmt.Errorf("当前非 root 且未找到 sudo，无法执行 %s；请以 root 运行或安装 sudo 后重试", name)
+}
+
 func installCertPlatform(certPath string) (bool, error) {
 	if isCertInstalled(certPath) {
 		logger.System().Info("root certificate already installed in system trust store")
@@ -32,23 +46,30 @@ func installCertPlatform(certPath string) (bool, error) {
 	// old Debian-first check misroute Manjaro into update-ca-certificates.
 	if path, err := exec.LookPath("trust"); err == nil {
 		logger.System().Info("installing certificate with trust tool")
-		cmd := exec.Command("sudo", path, "anchor", "--store", certPath)
+		cmd, err := privExec(path, "anchor", "--store", certPath)
+		if err != nil {
+			return false, err
+		}
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		logger.System().Info("running certificate install command", "command", "sudo", "tool", path, "args", []string{"anchor", "--store", certPath})
+		logger.System().Info("running certificate install command", "command", cmd.Path, "args", cmd.Args[1:])
 		if err := cmd.Run(); err != nil {
-			return false, fmt.Errorf("使用 trust 工具安装证书失败: %v\n请尝试手动运行: sudo trust anchor --store %s", err, certPath)
-		}
+			// Distro-specific failure: Debian ships the trust tool but a
+			// read-only p11-kit trust module, so anchor --store always fails
+			// with "p11-kit: no configured writable location to store
+			// anchors". Fall through to the distro anchor directories below.
+			logger.System().Warn("trust tool install failed, falling back to distro anchor directories", "error", err)
+		} else {
+			refreshLinuxTrustBundle()
 
-		refreshLinuxTrustBundle()
-
-		if isCertInstalled(certPath) {
-			return true, nil
+			if isCertInstalled(certPath) {
+				return true, nil
+			}
+			// trust anchor succeeded but the system bundle does not include the
+			// anchor (e.g. Debian layouts that only rebuild via
+			// update-ca-certificates) — fall through to the anchors path below.
+			logger.System().Warn("trust tool install not visible in system bundle, falling back to distro anchor directories")
 		}
-		// trust anchor succeeded but the system bundle does not include the
-		// anchor (e.g. Debian layouts that only rebuild via
-		// update-ca-certificates) — fall through to the anchors path below.
-		logger.System().Warn("trust tool install not visible in system bundle, falling back to distro anchor directories")
 	}
 
 	// No trust tool, or its result did not verify: copy the CA into the
@@ -62,9 +83,13 @@ func installCertPlatform(certPath string) (bool, error) {
 // against the on-disk bundle afterwards.
 func refreshLinuxTrustBundle() {
 	if _, err := exec.LookPath("update-ca-trust"); err == nil {
-		_ = exec.Command("sudo", "update-ca-trust", "extract").Run()
+		if cmd, err := privExec("update-ca-trust", "extract"); err == nil {
+			_ = cmd.Run()
+		}
 	} else if _, err := exec.LookPath("update-ca-certificates"); err == nil {
-		_ = exec.Command("sudo", "update-ca-certificates").Run()
+		if cmd, err := privExec("update-ca-certificates"); err == nil {
+			_ = cmd.Run()
+		}
 	}
 }
 
@@ -84,10 +109,17 @@ func installCertViaAnchors(certPath string) (bool, error) {
 		updateCmd = "update-ca-certificates"
 	} else if _, err := os.Stat("/etc/ca-certificates/trust-source/anchors/"); err == nil {
 		destPath = "/etc/ca-certificates/trust-source/anchors/snirect-root.crt"
-		updateCmd = "update-ca-certificates" // Arch uses update-ca-trust but update-ca-certificates might be present
+		// p11-kit-managed layout (Arch-style). update-ca-trust is canonical
+		// where present; without it, rebuild the compat bundle with
+		// `trust extract-compat` (mkcert's choice) instead of assuming
+		// update-ca-certificates exists.
+		updateCmd = "update-ca-certificates"
 		if _, err := exec.LookPath("update-ca-trust"); err == nil {
 			updateCmd = "update-ca-trust"
 			updateArgs = []string{"extract"}
+		} else if _, err := exec.LookPath("trust"); err == nil {
+			updateCmd = "trust"
+			updateArgs = []string{"extract-compat"}
 		}
 	} else if _, err := os.Stat("/usr/share/pki/trust/anchors/"); err == nil {
 		destPath = "/usr/share/pki/trust/anchors/snirect-root.pem"
@@ -104,7 +136,10 @@ func installCertViaAnchors(certPath string) (bool, error) {
 
 	// 写入证书文件
 	logger.System().Info("writing certificate", "path", destPath)
-	teeCmd := exec.Command("sudo", "tee", destPath)
+	teeCmd, err := privExec("tee", destPath)
+	if err != nil {
+		return false, err
+	}
 	teeCmd.Stdin = strings.NewReader(string(data))
 	teeCmd.Stdout = nil
 	teeCmd.Stderr = os.Stderr
@@ -114,7 +149,10 @@ func installCertViaAnchors(certPath string) (bool, error) {
 
 	// 运行更新命令
 	logger.System().Info("updating trust store", "command", updateCmd)
-	upCmd := exec.Command("sudo", append([]string{updateCmd}, updateArgs...)...)
+	upCmd, err := privExec(updateCmd, updateArgs...)
+	if err != nil {
+		return false, err
+	}
 	upCmd.Stdout = os.Stdout
 	upCmd.Stderr = os.Stderr
 	if err := upCmd.Run(); err != nil {
@@ -240,7 +278,10 @@ func uninstallCertPlatform(certPath string) error {
 	for _, path := range certPaths {
 		if _, err := os.Stat(path); err == nil {
 			logger.System().Info("removing certificate", "path", path)
-			rmCmd := exec.Command("sudo", "rm", path)
+			rmCmd, err := privExec("rm", path)
+			if err != nil {
+				return err
+			}
 			rmCmd.Stdout = os.Stdout
 			rmCmd.Stderr = os.Stderr
 			if err := rmCmd.Run(); err != nil {
@@ -256,7 +297,10 @@ func uninstallCertPlatform(certPath string) error {
 	// above only takes effect in the store it was refreshed from.
 	if path, err := exec.LookPath("update-ca-certificates"); err == nil {
 		logger.System().Info("updating CA certificates")
-		upCmd := exec.Command("sudo", path)
+		upCmd, err := privExec(path)
+		if err != nil {
+			return err
+		}
 		upCmd.Stdout = os.Stdout
 		upCmd.Stderr = os.Stderr
 		if err := upCmd.Run(); err != nil {
@@ -266,7 +310,10 @@ func uninstallCertPlatform(certPath string) error {
 	}
 	if path, err := exec.LookPath("update-ca-trust"); err == nil {
 		logger.System().Info("updating CA trust store")
-		upCmd := exec.Command("sudo", path)
+		upCmd, err := privExec(path)
+		if err != nil {
+			return err
+		}
 		upCmd.Stdout = os.Stdout
 		upCmd.Stderr = os.Stderr
 		if err := upCmd.Run(); err != nil {
@@ -388,7 +435,11 @@ func cleanSnirectPK11TrustAnchors() {
 		matches, _ := filepath.Glob(pattern)
 		for _, f := range matches {
 			logger.System().Info("removing old p11-kit trust anchor", "path", f)
-			rmCmd := exec.Command("sudo", "rm", "-f", f)
+			rmCmd, err := privExec("rm", "-f", f)
+			if err != nil {
+				logger.System().Warn("failed to remove p11-kit anchor", "path", f, "error", err)
+				continue
+			}
 			rmCmd.Stdout = os.Stdout
 			rmCmd.Stderr = os.Stderr
 			if err := rmCmd.Run(); err != nil {
