@@ -127,8 +127,8 @@ func FormatDAE(suffixes, exacts []string, policy string) string {
 
 // FormatClash renders the domain set as clash/mihomo rule lines:
 //
-//	- DOMAIN-SUFFIX,github.com,proxy
-//	- DOMAIN,docker.io,proxy
+//   - DOMAIN-SUFFIX,github.com,proxy
+//   - DOMAIN,docker.io,proxy
 //
 // Ready to paste into a rules list. Suffixes come first, then exact hosts,
 // each group alphabetically.

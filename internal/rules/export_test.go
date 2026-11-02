@@ -9,9 +9,9 @@ import (
 func TestExportDomains(t *testing.T) {
 	r := NewRules()
 	r.AlterHostname = map[string]string{
-		"*github.com":     "",  // suffix
-		"api.github.com":  "",  // exact, covered by *github.com
-		"*nyaa.si":        "",  // suffix
+		"*github.com":      "", // suffix
+		"api.github.com":   "", // exact, covered by *github.com
+		"*nyaa.si":         "", // suffix
 		"*sukebei.nyaa.si": "", // suffix nested under *nyaa.si
 	}
 	r.CertVerify = map[string]interface{}{
@@ -46,7 +46,7 @@ func TestExportDomains_KeepsUncoveredExacts(t *testing.T) {
 	// snirect has no rule for.
 	r := NewRules()
 	r.Hosts = map[string]string{
-		"docker.io":       "1.2.3.4",
+		"docker.io":            "1.2.3.4",
 		"registry-1.docker.io": "1.2.3.4",
 	}
 	r.Init()
