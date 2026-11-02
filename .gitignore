@@ -40,3 +40,4 @@ android/app/release/
 *~
 .DS_Store
 Thumbs.db
+.csearch/
