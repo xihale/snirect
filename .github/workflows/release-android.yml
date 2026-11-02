@@ -36,9 +36,20 @@ jobs:
           java-version: "17"
 
       - name: Accept Android SDK licenses
-        # ubuntu-latest 预装 SDK 与 cmdline-tools；android-actions/setup-android@v3
-        # 会执行已从仓库移除的 `sdkmanager tools` 而失败，只保留其必要职责：接受 license。
-        run: yes | sdkmanager --licenses >/dev/null
+        # setup-android@v3 已不可用（其内部跑已移除的 `sdkmanager tools`），改为手动
+        # 定位镜像预装的 SDK：导出 ANDROID_HOME 与 sdkmanager 进 PATH（后续 NDK
+        # 安装、gradle、gomobile 都依赖），再接受全部 license。
+        run: |
+          sdk="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          if [ ! -d "$sdk" ]; then echo "Android SDK missing at $sdk" >&2; exit 1; fi
+          bin="$(command -v sdkmanager || true)"
+          if [ -z "$bin" ]; then
+            bin="$(ls "$sdk"/cmdline-tools/latest/bin/sdkmanager "$sdk"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -n1)"
+          fi
+          if [ -z "$bin" ] || [ ! -x "$bin" ]; then echo "sdkmanager not found under $sdk" >&2; exit 1; fi
+          echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
+          echo "$(dirname "$bin")" >> "$GITHUB_PATH"
+          yes | "$bin" --licenses >/dev/null
 
       - name: Install NDK
         run: |
