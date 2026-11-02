@@ -7,28 +7,31 @@ const SampleConfigTOML = `# Snirect Configuration File
 # If an option is commented out, the program will use its internal default value.
 
 # [Certificate Verification Policy]
-# Controls how Snirect verifies the remote server's certificate.
-# Possible values:
-#   false    - Disable hostname verification. High compatibility but susceptible to MITM attacks.
-#   true     - (Default) Loose verification. Matches subdomains more flexibly (e.g., a.test.com matches b.test.com).
-#   "strict" - Standard strict verification. Recommended for high security.
-#   [ "domain1.com", "domain2.com" ] - List of domains to enable verification for.
+# How Snirect verifies the remote server's certificate on hosts it intercepts.
+# Hosts without rules are never re-signed — their TLS passes through and the
+# client sees the original server certificate, whatever these values are.
 #
-# Scope: only hosts Snirect intercepts (rule-bearing) are affected. Hosts
-# without rules are never re-signed — their TLS passes through and the client
-# sees the original server certificate, whatever this value is.
+# check_hostname: "off" | "loose" | "strict"
+#   "off"    - Skip hostname verification entirely.
+#   "loose"  - (Default) Loose verification. Matches subdomains more flexibly
+#              (e.g., a.test.com matches b.test.com).
+#   "strict" - Standard strict verification. Recommended for high security.
+#
+# check_hostname_allow: list of domain patterns. When non-empty it replaces
+# the mode above: any certificate whose DNS name matches a pattern is accepted
+# (useful for transit-proxy certificates), everything else is rejected.
 #
 # 证书域名校验策略
-# 控制 Snirect 如何验证远程服务器的证书域名。
-# 可选值:
-#   false    - 不校验证书域名。兼容性最高，但存在中间人攻击风险。
-#   true     - (默认) 宽松校验。允许子域名间的通配匹配。
-#   "strict" - 标准严格校验。建议追求安全的用户开启。
-#   [ "domain1.com", "domain2.com" ] - 仅对列表内的域名开启校验。
+# 只影响被截获（有规则）的主机。无规则站点不会被重签，TLS 原样透传，
+# 客户端看到的是服务器原本的证书，与这些取值无关。
 #
-# 作用范围：只影响被截获（有规则）的主机。无规则站点不会被重签，TLS 原样
-# 透传，客户端看到的是服务器原本的证书，与本项取值无关。
-# check_hostname = true
+# check_hostname: "off"（完全不校验）/ "loose"（默认，宽松校验，
+# 允许子域名间通配匹配）/ "strict"（标准严格校验，建议追求安全时开启）
+#
+# check_hostname_allow: 域名模式列表。非空时整体取代上面的模式：
+# 证书 DNS 名命中任一模式即放行（适用于中转代理证书），其余一律拒绝。
+# check_hostname = "loose"
+# check_hostname_allow = []
 
 # [System Proxy]
 # Automatically set Snirect as the system proxy on startup.
@@ -100,42 +103,13 @@ const SampleConfigTOML = `# Snirect Configuration File
 # 控制 Snirect 在有 IPv6 和 IPv4 地址时如何选择。
 # 需要先开启 ipv6 = true 才会生效。
 [preference]
-# Mode: standard, fastest, ipv6, ipv4
+# Mode: standard, ipv6, ipv4
 #   standard - (Default) Prefer IPv6 if available, otherwise first available
-#   fastest  - Test connection latency to all IPs and use the fastest (cached)
-#   ipv6     - Always prefer IPv6 when available (no testing)
+#   ipv6     - Always prefer IPv6 when available
 #   ipv4     - Force IPv4 only
 #
-# 模式: standard (标准), fastest (最快), ipv6 (强制v6), ipv4 (强制v4)
+# 模式: standard (标准), ipv6 (强制v6), ipv4 (强制v4)
 # mode = "standard"
-
-# Timeout for each connection test in milliseconds.
-# Lower = faster fallback, higher = more accurate.
-# 每个连接测试的超时时间（毫秒）。
-# test_timeout_ms = 500
-
-# Maximum number of IPs to test per query.
-# Set to conserve resources when many IPs are available (e.g., CDNs).
-#
-# 每次查询最多测试的 IP 数量。
-# 当可用 IP 很多时（如 CDN）可限制资源消耗。
-# max_test_ips = 10
-
-# Preference cache TTL in seconds.
-# 0 = automatically use half of the DNS record's TTL.
-# Shorter TTL = adapt to network changes faster.
-#
-# 优选结果缓存时间（秒）。
-# 0 = 自动使用 DNS 记录 TTL 的一半。
-# 较短的 TTL 能更快适应网络变化。
-# cache_ttl = 300
-
-# Maximum entries in preference cache (0 = unlimited).
-# PrefCache is separate from DNS cache and usually much smaller.
-#
-# 优选缓存的最大条目数 (0 = 不限制)。
-# 优选缓存独立于 DNS 缓存，通常小得多。
-# cache_size = 5000
 
 # [Timeout Settings]
 # Timeouts in seconds.
@@ -384,10 +358,9 @@ function FindProxyForURL(url, host) {
 //
 // PreparsedDefaultConfig contains the compile-time parsed default configuration.
 var PreparsedDefaultConfig = Config{
-	CheckHostname: true,
-	SetProxy:      false,
-	CAInstall:     "auto",
-	IPv6:          false,
+	SetProxy:  false,
+	CAInstall: "auto",
+	IPv6:      false,
 	DNS: DNSConfig{
 		Nameserver:   []string{"https://dnschina1.soraharu.com/dns-query", "tls://223.5.5.5"},
 		BootstrapDNS: []string{"tls://223.5.5.5"},
@@ -408,16 +381,8 @@ var PreparsedDefaultConfig = Config{
 		PACHost: "127.0.0.1",
 	},
 	Preference: PreferenceConfig{
-		Mode:          "standard",
-		TestTimeoutMs: 500,
-		MaxTestIPs:    10,
-		CacheTTL:      300,
-		CacheSize:     5000,
+		Mode: "standard",
 	},
-	Security: SecurityConfig{
-		ValidateChain:  true,
-		MinChainLength: 2,
-		CheckEKU:       true,
-		CheckValidity:  true,
-	},
+	CheckHostname:      "loose",
+	CheckHostnameAllow: nil,
 }

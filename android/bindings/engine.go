@@ -126,8 +126,13 @@ func hasIPLiteralBootstrap(servers []string) bool {
 // is 127.0.0.1 so the netstack bridge's loopback hop never touches the TUN.
 func buildCoreConfig(c *Config) *coreconfig.Config {
 	return &coreconfig.Config{
-		IPv6:          c.EnableIPv6,
-		CheckHostname: c.CheckHN,
+		IPv6: c.EnableIPv6,
+		CheckHostname: func() string {
+			if c.CheckHN {
+				return "loose"
+			}
+			return "off"
+		}(),
 		DNS: coreconfig.DNSConfig{
 			Nameserver:   c.NameServers,
 			BootstrapDNS: c.BootstrapDNS,

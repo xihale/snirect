@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xihale/snirect/internal/config"
 	"github.com/xihale/snirect/internal/rules"
 )
 
@@ -78,6 +77,43 @@ func generateTestCert(hasEKU bool, isCA bool, expiry time.Time) (*x509.Certifica
 
 func generateCA() (*x509.Certificate, *ecdsa.PrivateKey, error) {
 	return generateTestCert(false, true, time.Now().Add(365*24*time.Hour))
+}
+
+// generateChain builds a CA and a CA-signed leaf with the given expiry, EKU
+// presence, and DNS name, plus a root pool trusting the CA — enough for a
+// two-certificate chain that passes verifyConnCert's mandatory validation.
+func generateChain(expiry time.Time, hasEKU bool, dnsName string) (leaf, caCert *x509.Certificate, pool *x509.CertPool, err error) {
+	caCert, caPriv, err := generateCA()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	leafPriv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	serial, _ := rand.Int(rand.Reader, big.NewInt(1<<62))
+	tmpl := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: dnsName},
+		NotBefore:    time.Now().Add(-24 * time.Hour),
+		NotAfter:     expiry,
+		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		DNSNames:     []string{dnsName},
+	}
+	if hasEKU {
+		tmpl.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, &leafPriv.PublicKey, caPriv)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	leaf, err = x509.ParseCertificate(der)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	pool = x509.NewCertPool()
+	pool.AddCert(caCert)
+	return leaf, caCert, pool, nil
 }
 
 func generateLeaf(caCert *x509.Certificate, caPriv *ecdsa.PrivateKey) (*x509.Certificate, *ecdsa.PrivateKey, error) {
@@ -154,65 +190,53 @@ func TestHasServerAuthEKU(t *testing.T) {
 
 func TestVerifyCert_TimeValidity(t *testing.T) {
 	now := time.Now()
-	sec := config.SecurityConfig{ValidateChain: false, CheckEKU: false, CheckValidity: true}
-	policy := rules.CertPolicy{Enabled: true}
-	validCert, _, err := generateTestCert(true, false, now.Add(24*time.Hour))
+	validLeaf, caCert, pool, err := generateChain(now.Add(24*time.Hour), true, "test.example.com")
 	if err != nil {
-		t.Fatalf("gen validCert: %v", err)
+		t.Fatalf("gen valid chain: %v", err)
 	}
-	connValid := &mockConn{state: buildConnState(validCert)}
-	if !VerifyCert(connValid, "test.example.com", "", policy, sec, false) {
+	policy := rules.CertPolicy{Enabled: true}
+	if !verifyConnCert(&mockConn{state: buildConnState(validLeaf, caCert)}, "test.example.com", "", policy, false, pool) {
 		t.Error("valid cert should pass")
 	}
-	expiredCert, _, err := generateTestCert(true, false, now.Add(-24*time.Hour))
+	expiredLeaf, caCert2, pool2, err := generateChain(now.Add(-24*time.Hour), true, "test.example.com")
 	if err != nil {
-		t.Fatalf("gen expired: %v", err)
+		t.Fatalf("gen expired chain: %v", err)
 	}
-	connExpired := &mockConn{state: buildConnState(expiredCert)}
-	if VerifyCert(connExpired, "test.example.com", "", policy, sec, false) {
+	if verifyConnCert(&mockConn{state: buildConnState(expiredLeaf, caCert2)}, "test.example.com", "", policy, false, pool2) {
 		t.Error("expired cert should fail")
 	}
 }
 
 func TestVerifyCert_EKU(t *testing.T) {
 	now := time.Now()
-	sec := config.SecurityConfig{ValidateChain: false, CheckEKU: true, CheckValidity: true}
-	policy := rules.CertPolicy{Enabled: true}
-	withEKU, _, err := generateTestCert(true, false, now.Add(24*time.Hour))
+	withEKU, caCert, pool, err := generateChain(now.Add(24*time.Hour), true, "test.example.com")
 	if err != nil {
-		t.Fatalf("gen withEKU: %v", err)
+		t.Fatalf("gen withEKU chain: %v", err)
 	}
-	connWith := &mockConn{state: buildConnState(withEKU)}
-	if !VerifyCert(connWith, "test.example.com", "", policy, sec, false) {
+	policy := rules.CertPolicy{Enabled: true}
+	if !verifyConnCert(&mockConn{state: buildConnState(withEKU, caCert)}, "test.example.com", "", policy, false, pool) {
 		t.Error("cert with serverAuth EKU should pass")
 	}
-	noEKU, _, err := generateTestCert(false, false, now.Add(24*time.Hour))
+	noEKU, caCert2, pool2, err := generateChain(now.Add(24*time.Hour), false, "test.example.com")
 	if err != nil {
-		t.Fatalf("gen noEKU: %v", err)
+		t.Fatalf("gen noEKU chain: %v", err)
 	}
-	connWithout := &mockConn{state: buildConnState(noEKU)}
-	if VerifyCert(connWithout, "test.example.com", "", policy, sec, false) {
+	if verifyConnCert(&mockConn{state: buildConnState(noEKU, caCert2)}, "test.example.com", "", policy, false, pool2) {
 		t.Error("cert without serverAuth EKU should fail")
 	}
 }
 
-func TestVerifyCert_AllowedStrict(t *testing.T) {
+func TestVerifyCert_AllowedList(t *testing.T) {
 	now := time.Now()
-	baseSec := config.SecurityConfig{ValidateChain: false, CheckEKU: false, CheckValidity: true}
 	policyWildcard := rules.CertPolicy{Enabled: true, Allowed: []string{"*.example.com"}}
 	policyExact := rules.CertPolicy{Enabled: true, Allowed: []string{"test.example.com"}}
 	cert := generateTestCertHelper(now, "test.example.com")
 	conn := &mockConn{state: buildConnState(cert)}
-	if !VerifyCert(conn, "test.example.com", "", policyWildcard, baseSec, false) {
-		t.Error("wildcard match should pass when allowed_strict=false")
+	if !VerifyCert(conn, "test.example.com", "", policyWildcard, false) {
+		t.Error("wildcard allowed match should pass")
 	}
-	strictSec := baseSec
-	strictSec.AllowedStrict = true
-	if VerifyCert(conn, "test.example.com", "", policyWildcard, strictSec, false) {
-		t.Error("wildcard match should fail when allowed_strict=true")
-	}
-	if !VerifyCert(conn, "test.example.com", "", policyExact, strictSec, false) {
-		t.Error("exact allowed match should pass in strict mode")
+	if !VerifyCert(conn, "test.example.com", "", policyExact, false) {
+		t.Error("exact allowed match should pass")
 	}
 }
 
@@ -234,7 +258,6 @@ func generateTestCertHelper(now time.Time, cn string) *x509.Certificate {
 }
 
 func TestVerifyCertificateChain(t *testing.T) {
-	sec := config.SecurityConfig{ValidateChain: true, MinChainLength: 2}
 	caCert, caPriv, err := generateCA()
 	if err != nil {
 		t.Fatalf("CA gen: %v", err)
@@ -246,11 +269,11 @@ func TestVerifyCertificateChain(t *testing.T) {
 	roots := x509.NewCertPool()
 	roots.AddCert(caCert)
 	state1 := buildConnState(leafCert)
-	if err := verifyCertificateChain(leafCert, state1, sec, roots); err == nil {
+	if err := verifyCertificateChain(leafCert, state1, roots); err == nil {
 		t.Error("chain length 1 should fail min length check")
 	}
 	state2 := buildConnState(leafCert, caCert)
-	if err := verifyCertificateChain(leafCert, state2, sec, roots); err != nil {
+	if err := verifyCertificateChain(leafCert, state2, roots); err != nil {
 		t.Errorf("valid chain failed: %v", err)
 	}
 }
@@ -260,12 +283,11 @@ func TestVerifyCert_DisabledPolicySkipsAll(t *testing.T) {
 	policy := rules.CertPolicy{Enabled: false}
 
 	// Disabled policy should skip all verification
-	sec := config.SecurityConfig{ValidateChain: true, CheckEKU: true, CheckValidity: true}
 	expiredCert, _, err := generateTestCert(false, false, now.Add(-24*time.Hour))
 	if err != nil {
 		t.Fatalf("gen expired cert: %v", err)
 	}
-	if !VerifyCert(&mockConn{state: buildConnState(expiredCert)}, "wrong.example.com", "", policy, sec, false) {
+	if !VerifyCert(&mockConn{state: buildConnState(expiredCert)}, "wrong.example.com", "", policy, false) {
 		t.Error("disabled policy should accept any cert")
 	}
 }

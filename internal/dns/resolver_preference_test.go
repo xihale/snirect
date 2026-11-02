@@ -80,45 +80,6 @@ func makeDNSResponse(qType uint16, ips []string, ttl uint32) *miekgdns.Msg {
 	return msg
 }
 
-func TestPreferenceCacheBasic(t *testing.T) {
-	cache := newPreferenceCache(0)
-	cache.set("test", "1.2.3.4", 5*time.Second)
-	ip, ok := cache.get("test")
-	if !ok || ip != "1.2.3.4" {
-		t.Fatalf("expected cached IP, got %v, ok=%v", ip, ok)
-	}
-	time.Sleep(6 * time.Second)
-	_, ok = cache.get("test")
-	if ok {
-		t.Fatalf("expected expired entry to be gone")
-	}
-}
-
-func TestPreferenceCacheEviction(t *testing.T) {
-	cache := newPreferenceCache(2)
-	cache.set("a", "1.1.1.1", time.Minute)
-	cache.set("b", "2.2.2.2", time.Minute)
-	cache.set("c", "3.3.3.3", time.Minute) // evicts one
-	if size := cache.size(); size != 2 {
-		t.Fatalf("expected size 2, got %d", size)
-	}
-}
-
-func TestPreferenceCacheConcurrent(t *testing.T) {
-	cache := newPreferenceCache(100)
-	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		idx := i
-		go func() {
-			defer wg.Done()
-			host := fmt.Sprintf("%c.test.com", 'a'+rune(idx%26))
-			cache.set(host, "127.0.0.1", time.Second)
-		}()
-	}
-	wg.Wait()
-}
-
 func TestResolver_StandardSelectsIPv6(t *testing.T) {
 	aaaaMsg := makeDNSResponse(miekgdns.TypeAAAA, []string{"2001:db8::1"}, 300)
 	aMsg := makeDNSResponse(miekgdns.TypeA, []string{"192.0.2.1"}, 300)
@@ -131,9 +92,8 @@ func TestResolver_StandardSelectsIPv6(t *testing.T) {
 			DNS:        config.DNSConfig{},
 			Timeout:    config.TimeoutConfig{DNS: 5},
 		},
-		backend:   backend,
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(100),
+		backend: backend,
+		cache:   make(map[string]cacheEntry),
 	}
 
 	ip, _, err := r.resolveStandard(context.Background(), "example.com", nil)
@@ -157,9 +117,8 @@ func TestResolver_StandardFallbackToIPv4(t *testing.T) {
 			DNS:        config.DNSConfig{},
 			Timeout:    config.TimeoutConfig{DNS: 5},
 		},
-		backend:   backend,
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(100),
+		backend: backend,
+		cache:   make(map[string]cacheEntry),
 	}
 
 	ip, _, err := r.resolveStandard(context.Background(), "example.com", nil)
@@ -182,14 +141,13 @@ func TestResolver_IPv4Mode(t *testing.T) {
 			DNS:        config.DNSConfig{},
 			Timeout:    config.TimeoutConfig{DNS: 5},
 		},
-		backend:   backend,
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(100),
+		backend: backend,
+		cache:   make(map[string]cacheEntry),
 	}
 
-	ip, err := r.resolveWithPreference(context.Background(), "example.com", nil)
+	ip, err := r.resolveUpstream(context.Background(), "example.com", nil)
 	if err != nil {
-		t.Fatalf("resolveWithPreference error: %v", err)
+		t.Fatalf("resolveUpstream error: %v", err)
 	}
 	if ip != "192.0.2.1" {
 		t.Fatalf("expected IPv4 %s, got %s", "192.0.2.1", ip)
@@ -200,85 +158,18 @@ func TestResolver_IPv4Mode(t *testing.T) {
 	}
 }
 
-func TestResolver_FastestFallbackWhenNoIPs(t *testing.T) {
-	emptyMsg := makeDNSResponse(miekgdns.TypeA, []string{}, 300)
-	backend := &mockBackend{aaaaResp: emptyMsg, aResp: emptyMsg}
-
-	r := &Resolver{
-		Config: &config.Config{
-			IPv6: true,
-			Preference: config.PreferenceConfig{
-				Mode:          config.IPPreferenceFastest,
-				TestTimeoutMs: 1,
-				MaxTestIPs:    10,
-				CacheTTL:      60,
-			},
-			DNS:     config.DNSConfig{},
-			Timeout: config.TimeoutConfig{DNS: 5},
-		},
-		backend:   backend,
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(100),
-	}
-
-	ip, err := r.resolveFastest(context.Background(), "example.com", nil)
-	// Since no IPs, resolveStandard will be called and fail (no records)
-	if err == nil {
-		t.Fatalf("expected error from fastest fallback, got ip %s", ip)
-	}
-}
-
-func TestResolver_PreferenceCaching(t *testing.T) {
-	aMsg := makeDNSResponse(miekgdns.TypeA, []string{"192.0.2.1"}, 300)
-	backend := &mockBackend{aResp: aMsg}
-	r := &Resolver{
-		Config: &config.Config{
-			IPv6: false,
-			Preference: config.PreferenceConfig{
-				CacheTTL: 60,
-			},
-			DNS:     config.DNSConfig{},
-			Timeout: config.TimeoutConfig{DNS: 5},
-		},
-		backend:   backend,
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(100),
-	}
-
-	// First resolve should cache preference
-	ip1, err := r.resolveWithPreference(context.Background(), "example.com", nil)
-	if err != nil {
-		t.Fatalf("resolve error: %v", err)
-	}
-	if ip1 != "192.0.2.1" {
-		t.Fatalf("unexpected ip: %s", ip1)
-	}
-	// Second resolve should hit preference cache and not call backend
-	backend.callCount = 0
-	ip2, err := r.resolveWithPreference(context.Background(), "example.com", nil)
-	if err != nil {
-		t.Fatalf("second resolve error: %v", err)
-	}
-	if ip2 != ip1 {
-		t.Fatalf("ip mismatch: %s vs %s", ip1, ip2)
-	}
-	if backend.callCount > 0 {
-		t.Fatalf("backend was called after pref cache hit, calls: %d", backend.callCount)
-	}
-}
-
-func TestResolver_lookupAllAddresses(t *testing.T) {
+// TestResolver_queryDNS tests that queryDNS returns all records from the backend.
+func TestResolver_queryDNS(t *testing.T) {
 	aMsg := makeDNSResponse(miekgdns.TypeA, []string{"192.0.2.1", "192.0.2.2"}, 300)
 	backend := &mockBackend{aResp: aMsg}
 	r := &Resolver{
-		Config:    &config.Config{},
-		backend:   backend,
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(0),
+		Config:  &config.Config{},
+		backend: backend,
+		cache:   make(map[string]cacheEntry),
 	}
-	records, err := r.lookupAllAddresses(context.Background(), "example.com", miekgdns.TypeA, nil)
+	records, _, err := r.queryDNS(context.Background(), "example.com", miekgdns.TypeA, nil)
 	if err != nil {
-		t.Fatalf("lookupAllAddresses error: %v", err)
+		t.Fatalf("queryDNS error: %v", err)
 	}
 	if len(records) != 2 {
 		t.Fatalf("expected 2 records, got %d", len(records))
@@ -298,26 +189,15 @@ func TestResolver_lookupAllAddresses(t *testing.T) {
 	}
 }
 
-func BenchmarkPreferenceCacheSetGet(b *testing.B) {
-	cache := newPreferenceCache(0)
-	for i := 0; i < b.N; i++ {
-		host := fmt.Sprintf("host%d.test.com", i)
-		cache.set(host, "127.0.0.1", time.Minute)
-		_, _ = cache.get(host)
-	}
-}
-
 // TestResolver_InvalidateConcurrent tests that Invalidate is safe to call
 // from multiple goroutines concurrently without race conditions.
 func TestResolver_InvalidateConcurrent(t *testing.T) {
 	r := &Resolver{
-		Config:    &config.Config{},
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(0),
+		Config: &config.Config{},
+		cache:  make(map[string]cacheEntry),
 	}
 	// Populate cache with entries
 	r.setCache("example.com", "1.2.3.4", miekgdns.TypeA, 300)
-	r.setPreference("example.com", "1.2.3.4", 300)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
@@ -332,9 +212,6 @@ func TestResolver_InvalidateConcurrent(t *testing.T) {
 	// After invalidation, cache should be empty
 	if _, ok := r.getCache("example.com", miekgdns.TypeA); ok {
 		t.Error("cache entry still present after concurrent Invalidate")
-	}
-	if _, ok := r.prefCache.get("example.com"); ok {
-		t.Error("preference cache entry still present after concurrent Invalidate")
 	}
 }
 
@@ -388,8 +265,7 @@ func TestResolver_CacheLRU(t *testing.T) {
 		Config: &config.Config{
 			Limit: config.LimitConfig{DNSCacheSize: 2},
 		},
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(0),
+		cache: make(map[string]cacheEntry),
 	}
 	// Insert three entries; the oldest should be evicted.
 	r.setCache("a", "1.1.1.1", miekgdns.TypeA, 300)
@@ -414,11 +290,10 @@ func TestResolver_Resolve_WithHostRule(t *testing.T) {
 	baseRules := ruleslib.NewRules()
 	baseRules.Hosts["example.com"] = "target.com"
 	r := &Resolver{
-		Config:    &config.Config{},
-		Rules:     baseRules,
-		backend:   backend,
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(0),
+		Config:  &config.Config{},
+		Rules:   baseRules,
+		backend: backend,
+		cache:   make(map[string]cacheEntry),
 	}
 
 	ip, err := r.Resolve(context.Background(), "example.com", nil)
@@ -436,10 +311,9 @@ func TestResolver_Resolve_WithHostRule(t *testing.T) {
 // TestResolver_Resolve_IPDirect tests that Resolve returns IP directly if target is already an IP.
 func TestResolver_Resolve_IPDirect(t *testing.T) {
 	r := &Resolver{
-		Config:    &config.Config{},
-		Rules:     (*ruleslib.Rules)(nil),
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(0),
+		Config: &config.Config{},
+		Rules:  (*ruleslib.Rules)(nil),
+		cache:  make(map[string]cacheEntry),
 	}
 
 	ip, err := r.Resolve(context.Background(), "192.0.2.1", nil)
@@ -460,10 +334,9 @@ func TestResolver_Resolve_BracketedIPv6HostRule(t *testing.T) {
 	baseRules.Hosts["*behance.net"] = "[2001:67c:2960:6464::9765:41c5]"
 	baseRules.Init()
 	r := &Resolver{
-		Config:    &config.Config{},
-		Rules:     baseRules,
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(0),
+		Config: &config.Config{},
+		Rules:  baseRules,
+		cache:  make(map[string]cacheEntry),
 	}
 
 	ip, err := r.Resolve(context.Background(), "behance.net", nil)
@@ -505,10 +378,9 @@ func TestResolver_resolveSystem_LookupHostFailure(t *testing.T) {
 func TestResolver_lookupType_BackendError(t *testing.T) {
 	backend := &mockBackend{err: fmt.Errorf("backend exchange failed")}
 	r := &Resolver{
-		Config:    &config.Config{},
-		backend:   backend,
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(0),
+		Config:  &config.Config{},
+		backend: backend,
+		cache:   make(map[string]cacheEntry),
 	}
 	ip, ttl, err := r.lookupType(context.Background(), "example.com", miekgdns.TypeA, nil)
 	if err == nil {
@@ -526,10 +398,9 @@ func TestResolver_lookupType_RcodeFailure(t *testing.T) {
 	msg.Rcode = miekgdns.RcodeNameError // NXDOMAIN
 	backend := &mockBackend{aResp: msg, err: nil}
 	r := &Resolver{
-		Config:    &config.Config{},
-		backend:   backend,
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(0),
+		Config:  &config.Config{},
+		backend: backend,
+		cache:   make(map[string]cacheEntry),
 	}
 	ip, ttl, err := r.lookupType(context.Background(), "example.com", miekgdns.TypeA, nil)
 	if err == nil {
@@ -546,8 +417,7 @@ func TestResolver_buildMessage_ECS(t *testing.T) {
 		Config: &config.Config{
 			ECS: "1.2.0.0/16", // manual CIDR
 		},
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(0),
+		cache: make(map[string]cacheEntry),
 	}
 
 	m := r.buildMessage("example.com", miekgdns.TypeA, nil)
@@ -574,7 +444,6 @@ func TestResolver_getECS_AutoMode(t *testing.T) {
 			ECS: "auto",
 		},
 		cache:       make(map[string]cacheEntry),
-		prefCache:   newPreferenceCache(0),
 		autoECSNet4: &net.IPNet{IP: net.ParseIP("1.2.3.0"), Mask: net.CIDRMask(24, 32)},
 		autoECSNet6: &net.IPNet{IP: net.ParseIP("2001:db8::"), Mask: net.CIDRMask(48, 128)},
 	}
@@ -595,9 +464,8 @@ func TestResolver_getECS_AutoMode(t *testing.T) {
 // TestResolver_setCache_TTLBounds tests TTL min (1m) and max (24h) enforcement.
 func TestResolver_setCache_TTLBounds(t *testing.T) {
 	r := &Resolver{
-		Config:    &config.Config{},
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(0),
+		Config: &config.Config{},
+		cache:  make(map[string]cacheEntry),
 	}
 	// TTL = 0 should become 60s
 	r.setCache("host1", "1.1.1.1", miekgdns.TypeA, 0)
@@ -621,8 +489,7 @@ func TestResolver_getCache_LRUUpdate(t *testing.T) {
 		Config: &config.Config{
 			Limit: config.LimitConfig{DNSCacheSize: 2},
 		},
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(0),
+		cache: make(map[string]cacheEntry),
 	}
 	// Insert two entries
 	r.setCache("a", "1.1.1.1", miekgdns.TypeA, 300)
@@ -812,38 +679,5 @@ func TestExchangeParallel_Single(t *testing.T) {
 	}
 	if addr != "127.0.0.1" {
 		t.Errorf("address: got %s, want 127.0.0.1", addr)
-	}
-}
-
-// TestResolver_resolveFastest_PartialFailure tests resolveFastest when AAAA lookup fails but A succeeds.
-func TestResolver_resolveFastest_PartialFailure(t *testing.T) {
-	aMsg := makeDNSResponse(miekgdns.TypeA, []string{"192.0.2.1", "192.0.2.2"}, 300)
-	backend := &mockBackend{
-		aResp:    aMsg,
-		aaaaResp: nil, // AAAA will fail with "no AAAA response configured"
-	}
-	r := &Resolver{
-		Config: &config.Config{
-			IPv6: true,
-			Preference: config.PreferenceConfig{
-				TestTimeoutMs: 100,
-				MaxTestIPs:    10,
-				CacheTTL:      60,
-			},
-			DNS:     config.DNSConfig{},
-			Timeout: config.TimeoutConfig{DNS: 5},
-		},
-		backend:   backend,
-		cache:     make(map[string]cacheEntry),
-		prefCache: newPreferenceCache(0),
-	}
-	ip, err := r.resolveFastest(context.Background(), "example.com", nil)
-	// Since latency tests may fail (no service on port 443), resolveFastest may fall back to standard.
-	// Either way, we expect an IP from the A records.
-	if err != nil {
-		t.Fatalf("resolveFastest error: %v", err)
-	}
-	if ip != "192.0.2.1" && ip != "192.0.2.2" {
-		t.Errorf("unexpected ip: %s", ip)
 	}
 }

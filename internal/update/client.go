@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/xihale/snirect/internal/config"
 	"github.com/xihale/snirect/internal/proxy"
 	"github.com/xihale/snirect/internal/rules"
 )
@@ -85,7 +84,7 @@ func dialTLS(ctx context.Context, r *rules.Rules, addr string) (net.Conn, error)
 	if !ok {
 		policy, _ = rules.ParseCertPolicy(true)
 	}
-	if !proxy.VerifyCert(tc, host, sni, policy, config.PreparsedDefaultConfig.Security, r.GetIgnoreExpiry(host)) {
+	if !proxy.VerifyCert(tc, host, sni, policy, r.GetIgnoreExpiry(host)) {
 		tc.Close()
 		return nil, fmt.Errorf("certificate rejected for %s", host)
 	}

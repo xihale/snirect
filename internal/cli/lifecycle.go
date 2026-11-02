@@ -170,13 +170,20 @@ func setupLogging(cfg *config.Config, cmd *cobra.Command) {
 	}
 }
 
+// startPprof enables the pprof endpoint when SNIRECT_PPROF is set to a
+// non-empty value; SNIRECT_PPROF_ADDR overrides the listen address
+// (default 127.0.0.1:6060). Debug knobs stay out of the CLI surface.
 func startPprof() {
-	if !pprof {
+	if os.Getenv("SNIRECT_PPROF") == "" {
 		return
 	}
+	addr := os.Getenv("SNIRECT_PPROF_ADDR")
+	if addr == "" {
+		addr = "127.0.0.1:6060"
+	}
 	go func() {
-		logger.Control().Info("pprof listening", "addr", pprofAddr)
-		if err := http.ListenAndServe(pprofAddr, nil); err != nil {
+		logger.Control().Info("pprof listening", "addr", addr)
+		if err := http.ListenAndServe(addr, nil); err != nil {
 			logger.Control().Error("pprof failed", "error", err)
 		}
 	}()

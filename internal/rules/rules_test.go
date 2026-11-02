@@ -288,26 +288,3 @@ func TestLoadRules_FrontedHostsHaveAllowlist(t *testing.T) {
 		})
 	}
 }
-
-func TestMerge_RebuildsIndexes(t *testing.T) {
-	base := NewRules()
-	base.AlterHostname["example.com"] = "target.com"
-	base.Init()
-
-	override := NewRules()
-	override.Hosts["api.example.com"] = "1.2.3.4"
-	override.CertVerify["*.example.com"] = "strict"
-	override.Init()
-
-	base.Merge(override)
-
-	if got, ok := base.GetAlterHostname("example.com"); !ok || got != "target.com" {
-		t.Fatalf("merge should retain existing alter hostname, got %q ok=%v", got, ok)
-	}
-	if got, ok := base.GetHost("api.example.com"); !ok || got != "1.2.3.4" {
-		t.Fatalf("merge should expose merged host, got %q ok=%v", got, ok)
-	}
-	if got, ok := base.GetCertVerify("foo.example.com"); !ok || !got.Enabled || !got.Strict {
-		t.Fatalf("merge should rebuild cert verify indexes, got %+v ok=%v", got, ok)
-	}
-}

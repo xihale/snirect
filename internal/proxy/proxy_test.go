@@ -223,7 +223,7 @@ func TestHandleHTTP_Redirect(t *testing.T) {
 func TestShouldIntercept(t *testing.T) {
 	// Helper to create ProxyServer with given settings. Fresh rules per case:
 	// a shared instance would leak entries across subtests.
-	makePS := func(checkHostname interface{}, hasAlter, hasVerifyOff bool) *ProxyServer {
+	makePS := func(checkHostname string, hasAlter, hasVerifyOff bool) *ProxyServer {
 		rls := rules.NewRules()
 		if hasAlter {
 			rls.AlterHostname["example.com"] = "fake.com"
@@ -241,24 +241,24 @@ func TestShouldIntercept(t *testing.T) {
 		name          string
 		host          string
 		port          string
-		checkHostname interface{}
+		checkHostname string
 		hasAlter      bool
 		hasVerifyOff  bool
 		want          bool
 	}{
 		// Port not 443 -> never intercept
-		{"port 80", "example.com", "80", true, false, false, false},
+		{"port 80", "example.com", "80", "loose", false, false, false},
 		// Port 443, no rules at all -> pass through with the original
 		// certificate, whatever the global verification setting says
-		{"no rules, verif enabled", "example.com", "443", true, false, false, false},
-		{"no rules, verif disabled", "example.com", "443", false, false, false, false},
+		{"no rules, verif enabled", "example.com", "443", "loose", false, false, false},
+		{"no rules, verif disabled", "example.com", "443", "off", false, false, false},
 		// Port 443, alter rule present -> intercept (any global setting)
-		{"alter rule, verif enabled", "example.com", "443", true, true, false, true},
-		{"alter rule, verif disabled", "example.com", "443", false, true, false, true},
+		{"alter rule, verif enabled", "example.com", "443", "loose", true, false, true},
+		{"alter rule, verif disabled", "example.com", "443", "off", true, false, true},
 		// Per-host verify-off rule pins interception even without an alter rule
-		{"per-host verify off", "example.com", "443", true, false, true, true},
+		{"per-host verify off", "example.com", "443", "loose", false, true, true},
 		// Hook-owned host (github codeload fix) intercepts even rule-less
-		{"hook host", "github.com", "443", true, false, false, true},
+		{"hook host", "github.com", "443", "loose", false, false, true},
 	}
 
 	for _, tt := range tests {
@@ -471,7 +471,7 @@ func TestProxy_HTTPS_CONNECT(t *testing.T) {
 	// writes the real port back into cfg.Server.Port), which avoids bind races
 	// across repeated/parallel runs.
 	cfg := &config.Config{
-		CheckHostname: false,
+		CheckHostname: "off",
 		Server: config.ServerConfig{
 			Address:    "127.0.0.1",
 			Port:       0,
@@ -570,7 +570,7 @@ func TestConnect_CertRejectEvent(t *testing.T) {
 	sharedRules.AlterHostname["target.example"] = "target.example"
 
 	cfg := &config.Config{
-		CheckHostname: false,
+		CheckHostname: "off",
 		Server: config.ServerConfig{
 			Address:    "127.0.0.1",
 			Port:       0,

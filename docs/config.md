@@ -8,7 +8,8 @@
 改完要重启进程。注释掉的项用编译期默认值。完整字段说明在仓库里的 `internal/config/defaults.go` 中的 `SampleConfigTOML`。
 
 ```toml
-check_hostname = true          # true / false / "strict" / 域名列表
+check_hostname = "loose"       # "off" / "loose" / "strict"
+# check_hostname_allow = []    # 非空时取代上面的模式：命中模式的证书放行
 set_proxy = false              # 默认关，不自动改系统代理
 ca_install = "auto"            # auto / always / never
 ipv6 = false                   # 默认关，避免不可达的 v6

@@ -8,10 +8,8 @@ import (
 )
 
 var (
-	setProxy  bool
-	logLevel  string
-	pprof     bool
-	pprofAddr string
+	setProxy bool
+	logLevel string
 )
 
 var rootCmd = &cobra.Command{
@@ -37,8 +35,6 @@ Supports: Linux, macOS, Windows`,
 func init() {
 	rootCmd.Flags().BoolVarP(&setProxy, "set-proxy", "s", false, "Set system proxy on start")
 	rootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "v", "", "Log level (debug, info, warn, error)")
-	rootCmd.PersistentFlags().BoolVar(&pprof, "pprof", false, "Enable pprof profiling")
-	rootCmd.PersistentFlags().StringVar(&pprofAddr, "pprof-addr", "127.0.0.1:6060", "pprof listen address")
 
 	certCmd.AddCommand(certInstallCmd, certRemoveCmd, certStatusCmd)
 	certCmd.AddCommand(firefoxCertCmd)

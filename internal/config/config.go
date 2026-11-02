@@ -8,10 +8,15 @@ import (
 
 // Config represents the main configuration for Snirect.
 type Config struct {
-	// CheckHostname controls certificate hostname verification.
-	// Can be bool, string ("strict", "true", "false"), or []string of allowed hostnames.
-	// Use CheckHostnamePolicy() for type-safe access.
-	CheckHostname interface{} `toml:"check_hostname"`
+	// CheckHostname controls certificate hostname verification:
+	// "off" (skip), "loose" (default; subdomains may match), or "strict"
+	// (standard library matching only).
+	CheckHostname string `toml:"check_hostname"`
+
+	// CheckHostnameAllow, when non-empty, restricts verification to hosts
+	// matching these patterns (certificates for transit proxies etc.).
+	// Non-empty overrides the CheckHostname mode entirely.
+	CheckHostnameAllow []string `toml:"check_hostname_allow"`
 
 	SetProxy bool `toml:"set_proxy"`
 
@@ -41,31 +46,13 @@ type Config struct {
 
 	// Preference contains DNS IP preference settings.
 	Preference PreferenceConfig `toml:"preference"`
-
-	// Security contains certificate verification hardening settings.
-	Security SecurityConfig `toml:"security"`
-}
-
-// SecurityConfig controls zero-trust certificate verification.
-type SecurityConfig struct {
-	// ValidateChain enables full certificate chain validation (default true).
-	ValidateChain bool `toml:"validate_chain"`
-	// MinChainLength minimum expected chain length including root (2 = self-signed, 3 = intermediate).
-	MinChainLength int `toml:"min_chain_length"`
-	// CheckEKU verifies certificate Extended Key Usage contains serverAuth (default true).
-	CheckEKU bool `toml:"check_eku"`
-	// CheckValidity verifies certificate time validity (always recommended, default true).
-	CheckValidity bool `toml:"check_validity"`
-	// AllowedStrict disables wildcards in allowed lists when true (default false).
-	AllowedStrict bool `toml:"allowed_strict"`
 }
 
 // IPPreferenceMode defines how IP selection works when both IPv6 and IPv4 are available.
 type IPPreferenceMode string
 
 const (
-	IPPreferenceStandard IPPreferenceMode = "standard" // Current behavior: prefer v6 if enabled, then first
-	IPPreferenceFastest  IPPreferenceMode = "fastest"  // Test both, use lowest latency (cached)
+	IPPreferenceStandard IPPreferenceMode = "standard" // Prefer v6 if enabled, then first
 	IPPreferenceIPv6     IPPreferenceMode = "ipv6"     // Always prefer IPv6 if available
 	IPPreferenceIPv4     IPPreferenceMode = "ipv4"     // Always prefer IPv4
 )
@@ -73,15 +60,6 @@ const (
 // PreferenceConfig contains DNS IP preference settings.
 type PreferenceConfig struct {
 	Mode IPPreferenceMode `toml:"mode"` // Selection mode
-	// TestTimeoutMs is the timeout for each connection test in milliseconds.
-	// When testing IPs, we dial with this timeout and measure connection establishment time.
-	TestTimeoutMs int `toml:"test_timeout_ms"`
-	// MaxTestIPs limits the number of IPs to test per query to avoid resource exhaustion.
-	MaxTestIPs int `toml:"max_test_ips"`
-	// CacheTTL is the preference cache TTL in seconds. 0 means use DNS TTL / 2.
-	CacheTTL int `toml:"cache_ttl"`
-	// CacheSize limits the number of entries in the preference cache. 0 = unlimited.
-	CacheSize int `toml:"cache_size"`
 }
 
 // TimeoutConfig contains timeout settings in seconds.
@@ -116,9 +94,18 @@ type ServerConfig struct {
 	BufferSize int    `toml:"buffer_size"` // Tunnel copy buffer size in bytes (default 65536, min 4096, max 1048576)
 }
 
-// CheckHostnamePolicy returns the parsed certificate verification policy from CheckHostname.
-// This provides type-safe access instead of passing the raw interface{} to callers.
+// CheckHostnamePolicy returns the certificate verification policy derived
+// from CheckHostname/CheckHostnameAllow.
 func (c *Config) CheckHostnamePolicy() rules.CertPolicy {
-	p, _ := rules.ParseCertPolicy(c.CheckHostname)
-	return p
+	if len(c.CheckHostnameAllow) > 0 {
+		return rules.CertPolicy{Enabled: true, Allowed: c.CheckHostnameAllow}
+	}
+	switch c.CheckHostname {
+	case "off":
+		return rules.CertPolicy{Enabled: false}
+	case "strict":
+		return rules.CertPolicy{Enabled: true, Strict: true}
+	default: // "loose", or the zero value of programmatically built configs
+		return rules.CertPolicy{Enabled: true}
+	}
 }

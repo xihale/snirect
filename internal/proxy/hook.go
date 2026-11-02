@@ -17,9 +17,9 @@ import (
 //   - interceptsH1: whether the established tunnel is served through an
 //     HTTP/1.1 intercept loop instead of a plain byte pipe.
 //
-// Hooks are evaluated in registration order; the first match wins.
-// P1 will move registration into the rules layer so new hooks can be
-// declared by configuration rather than compiled in.
+// Hooks are evaluated in registration order; the first match wins. This
+// registry is deliberately compiled-in only: hooks run MITM'd HTTP logic,
+// so letting configuration declare them would widen the trust boundary.
 type tunnelHook interface {
 	match(host, sni string) bool
 	pinALPN() []string

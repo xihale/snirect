@@ -7,12 +7,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xihale/snirect/internal/config"
 	"github.com/xihale/snirect/internal/logger"
 	"github.com/xihale/snirect/internal/rules"
 
 	"golang.org/x/net/publicsuffix"
 )
+
+// minChainLength is the required number of certificates in the upstream
+// chain including the leaf (2 = leaf + issuer; a bare self-signed leaf fails).
+const minChainLength = 2
 
 // TLSConnection is the minimal interface needed for certificate verification.
 type TLSConnection interface {
@@ -77,10 +80,18 @@ func looselyMatch(cert *x509.Certificate, hostname string) bool {
 	return false
 }
 
-// VerifyCert verifies a TLS connection's certificate against the given host, policy, and security config.
-// This is the shared verification logic used by both proxy and upstream client.
+// VerifyCert verifies a TLS connection's certificate against the given host
+// and policy. This is the shared verification logic used by both proxy and
+// upstream client. The checks are fixed, not configurable: chain to a trusted
+// root, serverAuth EKU, time validity, then hostname match.
 // ignoreExpiry skips certificate time validity checks when true.
-func VerifyCert(conn TLSConnection, host, targetSNI string, policy rules.CertPolicy, sec config.SecurityConfig, ignoreExpiry bool) bool {
+func VerifyCert(conn TLSConnection, host, targetSNI string, policy rules.CertPolicy, ignoreExpiry bool) bool {
+	return verifyConnCert(conn, host, targetSNI, policy, ignoreExpiry, nil)
+}
+
+// verifyConnCert is VerifyCert with an injectable root pool for tests; nil
+// means the system root store.
+func verifyConnCert(conn TLSConnection, host, targetSNI string, policy rules.CertPolicy, ignoreExpiry bool, roots *x509.CertPool) bool {
 	state := conn.ConnectionState()
 	if len(state.PeerCertificates) == 0 {
 		logger.Upstream().Warn("upstream sent no certificates", "host", host)
@@ -97,7 +108,7 @@ func VerifyCert(conn TLSConnection, host, targetSNI string, policy rules.CertPol
 	}
 
 	// 2. Time validity check
-	if sec.CheckValidity && !ignoreExpiry {
+	if !ignoreExpiry {
 		now := time.Now()
 		if now.Before(leaf.NotBefore) {
 			logger.Upstream().Warn("certificate not valid yet", "host", host, "not_before", leaf.NotBefore.Format(time.RFC3339))
@@ -110,7 +121,7 @@ func VerifyCert(conn TLSConnection, host, targetSNI string, policy rules.CertPol
 	}
 
 	// 3. EKU check
-	if sec.CheckEKU && !hasServerAuthEKU(leaf) {
+	if !hasServerAuthEKU(leaf) {
 		logger.Upstream().Warn("certificate missing serverAuth EKU", "host", host)
 		return false
 	}
@@ -119,33 +130,19 @@ func VerifyCert(conn TLSConnection, host, targetSNI string, policy rules.CertPol
 	// Check if any certificate DNS name matches an allowed pattern.
 	// Skips chain validation and time validity (transit proxy certs may be expired).
 	if len(policy.Allowed) > 0 {
-		allowedStrict := sec.AllowedStrict
 		for _, allowedPattern := range policy.Allowed {
 			for _, dnsName := range leaf.DNSNames {
-				if allowedStrict {
-					if dnsName == allowedPattern {
-						logger.Upstream().Debug("certificate allowed by pattern", "host", host, "pattern", allowedPattern, "dns_name", dnsName)
-						return true
-					}
-				} else {
-					if rules.MatchHost(allowedPattern, dnsName) {
-						logger.Upstream().Debug("certificate allowed by pattern", "host", host, "pattern", allowedPattern, "dns_name", dnsName)
-						return true
-					}
+				if rules.MatchHost(allowedPattern, dnsName) {
+					logger.Upstream().Debug("certificate allowed by pattern", "host", host, "pattern", allowedPattern, "dns_name", dnsName)
+					return true
 				}
 			}
 		}
 		// Also check CommonName if no SANs
 		if len(leaf.DNSNames) == 0 && leaf.Subject.CommonName != "" {
 			for _, allowedPattern := range policy.Allowed {
-				if allowedStrict {
-					if leaf.Subject.CommonName == allowedPattern {
-						return true
-					}
-				} else {
-					if rules.MatchHost(allowedPattern, leaf.Subject.CommonName) {
-						return true
-					}
+				if rules.MatchHost(allowedPattern, leaf.Subject.CommonName) {
+					return true
 				}
 			}
 		}
@@ -154,11 +151,9 @@ func VerifyCert(conn TLSConnection, host, targetSNI string, policy rules.CertPol
 	}
 
 	// 5. Certificate chain validation (only for standard hostname verification)
-	if sec.ValidateChain {
-		if err := verifyCertificateChain(leaf, state, sec, nil); err != nil {
-			logger.Upstream().Warn("certificate chain validation failed", "host", host, "error", err)
-			return false
-		}
+	if err := verifyCertificateChain(leaf, state, roots); err != nil {
+		logger.Upstream().Warn("certificate chain validation failed", "host", host, "error", err)
+		return false
 	}
 
 	// 6. Standard hostname verification (original host)
@@ -190,7 +185,7 @@ func hasServerAuthEKU(cert *x509.Certificate) bool {
 
 // verifyCertificateChain validates the certificate chain up to a trusted root.
 // If roots is nil, system root CAs are used.
-func verifyCertificateChain(leaf *x509.Certificate, state tls.ConnectionState, sec config.SecurityConfig, roots *x509.CertPool) error {
+func verifyCertificateChain(leaf *x509.Certificate, state tls.ConnectionState, roots *x509.CertPool) error {
 	// Build intermediate pool from peer certificates (excluding leaf)
 	intermediates := x509.NewCertPool()
 	for _, cert := range state.PeerCertificates[1:] {
@@ -225,8 +220,8 @@ func verifyCertificateChain(leaf *x509.Certificate, state tls.ConnectionState, s
 
 	// Check chain length
 	chain := state.PeerCertificates
-	if len(chain) < sec.MinChainLength {
-		return fmt.Errorf("chain too short: %d < %d", len(chain), sec.MinChainLength)
+	if len(chain) < minChainLength {
+		return fmt.Errorf("chain too short: %d < %d", len(chain), minChainLength)
 	}
 
 	return nil

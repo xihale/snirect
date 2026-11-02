@@ -495,7 +495,7 @@ func (s *ProxyServer) verifyServerCert(conn *tls.Conn, hostname, targetSNI strin
 		policy = s.Config.CheckHostnamePolicy()
 	}
 	ignoreExpiry := s.Rules.GetIgnoreExpiry(hostname)
-	return VerifyCert(conn, hostname, targetSNI, policy, s.Config.Security, ignoreExpiry)
+	return VerifyCert(conn, hostname, targetSNI, policy, ignoreExpiry)
 }
 
 func (s *ProxyServer) directTunnel(ctx context.Context, clientConn net.Conn, host, port string) {

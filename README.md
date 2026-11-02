@@ -24,7 +24,7 @@ Snirect 是一个本地 HTTP/HTTPS 代理。对 TLS 流量，它在握手阶段�
 - **SNI 改写**：规则支持 `example.com` / `*.example.com` / `*example.com` 三种写法；改写目标为空即剥掉 SNI
 - **证书策略**：`CertVerify` 按域名放行证书、`IgnoreExpiry` 忽略过期证书、`Hosts` 把域名指到固定 IP 绕过 DNS
 - **MITM**：本机生成根 CA 并签发叶证书（带缓存），系统需信任该 CA 才能解密；Firefox 用独立的 NSS 库，单独安装（哪些程序不认系统 CA，见 [CA 信任边界](#ca-信任边界)）
-- **DNS**：UDP / TCP / DoT / DoH 上游，域名上游可用 IP bootstrap 解析，ECS 支持 auto 模式；IP 优选提供 fastest 模式（v4/v6 都测延迟取最快，结果缓存）
+- **DNS**：UDP / TCP / DoT / DoH 上游，域名上游可用 IP bootstrap 解析，ECS 支持 auto 模式；IP 优选支持 standard / ipv6 / ipv4 模式
 - **系统代理**：设置 PAC；`proxy env` 打印终端用的 `http_proxy` 命令，配合 `eval` 使用
 - **tunnel hook**：站点级修正逻辑挂在转发路径外，目前只有 GitHub codeload 重定向修正一处
 
