@@ -60,6 +60,20 @@
 // tarpits on the Unicom line; single handshakes minutes later complete in
 // <0.5s, so this is rate-based GFW probing, not a blocked front.
 //
+// 1.1.4.59 (reviewed 2026-11-01, probed from both lines): all three upstream
+// edits are already covered, nothing adopted. store.steampowered.com re-pinned
+// to 23.15.142.182 — their previous 23.39.61.133 is the issue-#61 IP that
+// alert-80s on empty SNI — but that new edge and our 23.217.182.113 both
+// answer 200 from both lines, so the pin below stays. Their facebook rewrite
+// (empty SNI → scontent.xx.fbcdn.net, same 157.240.22.169) and their
+// discuss.huggingface.co rewrite (stripped SNI → the hellohellohello
+// Discourse name) are behavior-identical here: both SNI modes answer 200 on
+// either line, so the stripped entries stay. PR #36 closed 2026-10-31 with
+// upstream confirming Gemini now needs alkalimakersuite-pa.clients6.google.com
+// reachable; the *google.com GFE front already routes that Host (GET 302,
+// same path as the known-good geminiweb-pa 404), so no rule is added and the
+// 10-28 verdict on the clients6 pins stands.
+//
 // Two exceptions go past upstream's pin:
 //   - graphql.api.dailymotion.com is CloudFront-only, so it keeps the Host but
 //     rewrites SNI to the distribution name (CloudFront requires a matching
