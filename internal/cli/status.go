@@ -5,17 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
-	"strings"
 
-	"github.com/pelletier/go-toml/v2"
+	"github.com/spf13/cobra"
 	"github.com/xihale/snirect/internal/color"
 	"github.com/xihale/snirect/internal/config"
 	"github.com/xihale/snirect/internal/rules"
 	"github.com/xihale/snirect/internal/service"
 	"github.com/xihale/snirect/internal/sysproxy"
-
-	"github.com/spf13/cobra"
 )
 
 var statusCmd = &cobra.Command{
@@ -34,6 +30,7 @@ var showConfig bool
 
 func init() {
 	statusCmd.Flags().BoolVar(&showConfig, "show-config", false, "Print loaded config and built-in rules")
+	_ = statusCmd.Flags().MarkHidden("show-config")
 }
 
 // statusView is the normalized shape gatherStatusFromFile produces and
@@ -97,7 +94,7 @@ func gatherStatus() statusView {
 	}
 
 	v.systemProxy = sysproxy.IsSystemProxySet()
-	v.svcInstalled, v.svcRunning, v.svcDetail = service.ServiceStatus()
+	v.svcInstalled, v.svcRunning, v.svcDetail = service.Status()
 
 	// Port probe — the replacement for the deleted daemon control API. We only
 	// have a real answer for the HTTP-proxy listener; TUN mode (no TCP port)
@@ -139,7 +136,7 @@ func renderStatus(v statusView) {
 		// Probe failed (no port configured, or lsof/netstat unavailable).
 		fmt.Printf("  Port:      %s%s%s\n", c(color.Gray), v.portErr, c(color.Reset))
 	case !v.portOccupied:
-		fmt.Printf("  Port:      %s%d not listening%s  (start with: snirect)\n", c(color.Gray), v.configPort, c(color.Reset))
+		fmt.Printf("  Port:      %s%d not listening%s  (start with: snirect run)\n", c(color.Gray), v.configPort, c(color.Reset))
 	case looksLikeSnirect(v.portOwner):
 		fmt.Printf("  Port:      %s%d in use by snirect%s  (proxy running)\n", c(color.Green), v.configPort, c(color.Reset))
 	default:
@@ -167,7 +164,7 @@ func renderStatus(v statusView) {
 	if v.systemProxy {
 		fmt.Printf("  System:    %senabled%s\n", c(color.Green), c(color.Reset))
 	} else {
-		fmt.Printf("  System:    %snot set%s  → snirect proxy set\n", c(color.Red), c(color.Reset))
+		fmt.Printf("  System:    %snot set%s  → snirect proxy on\n", c(color.Red), c(color.Reset))
 	}
 
 	header("Service")
@@ -183,10 +180,11 @@ func renderStatus(v statusView) {
 	}
 
 	header("Quick Commands")
-	fmt.Println("  Start:       snirect -s")
-	fmt.Println("  Install CA:  snirect cert install")
-	fmt.Println("  Set proxy:   snirect proxy set")
-	fmt.Printf("  Logs:        %s\n", logHint(v.logFile))
+	fmt.Println("  Run:             snirect run -s")
+	fmt.Println("  Install service: snirect service install -s")
+	fmt.Println("  Install CA:      snirect cert install")
+	fmt.Println("  Enable proxy:    snirect proxy on")
+	fmt.Printf("  Logs:            %s\n", logHint(v.logFile))
 	fmt.Println("────────────────────────────────────────────")
 }
 
@@ -220,70 +218,4 @@ func printConfigAndRules() {
 
 	printConfig(cfg)
 	printRules(r)
-}
-
-func printConfig(cfg *config.Config) {
-	c := color.If
-	fmt.Printf("%s=== Configuration ===%s\n", c(color.Bold)+c(color.Cyan), c(color.Reset))
-
-	data, err := toml.Marshal(cfg)
-	if err != nil {
-		fmt.Printf("(marshal error: %v)\n", err)
-		return
-	}
-
-	for _, line := range strings.Split(string(data), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			fmt.Println()
-			continue
-		}
-		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			fmt.Printf("%s%s%s\n", c(color.Yellow), line, c(color.Reset))
-		} else if idx := strings.Index(line, "="); idx > 0 {
-			fmt.Printf("%s%s%s=%s%s%s\n", c(color.Green), line[:idx], c(color.Reset), c(color.Cyan), line[idx+1:], c(color.Reset))
-		} else {
-			fmt.Println(line)
-		}
-	}
-}
-
-func printRules(r *rules.Rules) {
-	c := color.If
-	fmt.Printf("\n%s=== Built-in Rules ===%s\n", c(color.Bold)+c(color.Cyan), c(color.Reset))
-
-	printMap := func(title string, m map[string]string) {
-		if len(m) == 0 {
-			return
-		}
-		fmt.Printf("%s[%s]%s\n", c(color.Yellow), title, c(color.Reset))
-		keys := make([]string, 0, len(m))
-		for k := range m {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			v := m[k]
-			if v == "" {
-				v = "None"
-			}
-			fmt.Printf("  %s%s%s -> %s%s%s\n", c(color.Green), k, c(color.Reset), c(color.Cyan), v, c(color.Reset))
-		}
-		fmt.Println()
-	}
-
-	printMap("alter_hostname", r.AlterHostname)
-	printMap("hosts", r.Hosts)
-
-	if len(r.CertVerify) > 0 {
-		fmt.Printf("%s[cert_verify]%s\n", c(color.Yellow), c(color.Reset))
-		keys := make([]string, 0, len(r.CertVerify))
-		for k := range r.CertVerify {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			fmt.Printf("  %s%s%s -> %s%v%s\n", c(color.Green), k, c(color.Reset), c(color.Cyan), r.CertVerify[k], c(color.Reset))
-		}
-	}
 }

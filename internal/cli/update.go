@@ -24,9 +24,9 @@ var updateCmd = &cobra.Command{
   snirect update           download, verify SHA-256, replace the installed binary
 
 The check uses the same Hosts-IP + empty-SNI path as the proxy, so it
-works even when the proxy itself is not running. The binary is installed
-to the same location as 'snirect install' and the OS service is restarted
-if it is already registered.`,
+works even when the proxy itself is not running. The binary replaces the
+current running executable and the background service is restarted if it
+was running.`,
 	RunE: runUpdate,
 }
 
@@ -83,34 +83,35 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println("sha256 ok")
 
-	installed, running, _ := service.ServiceStatus()
+	installed, running, _ := service.Status()
 	if running {
 		fmt.Println("stopping service...")
-		if err := service.StopService(); err != nil {
+		if err := service.Stop(); err != nil {
 			return err
 		}
 	}
 
-	fmt.Printf("installing to %s...\n", service.BinPath())
-	if err := service.ReplaceBinary(tmp); err != nil {
+	target, err := service.ReplaceExecutable(tmp)
+	if err != nil {
 		if running {
-			_ = service.StartService()
+			_ = service.Start()
 		}
 		return err
 	}
+	fmt.Printf("installed to %s\n", target)
 
 	if installed {
 		fmt.Println("starting service...")
-		if err := service.StartService(); err != nil {
+		if err := service.Start(); err != nil {
 			return fmt.Errorf("installed %s but failed to start service: %w", info.Latest, err)
 		}
 	}
 
 	fmt.Printf("updated to %s\n", info.Latest)
-	if sameExecutable(service.BinPath()) {
+	if sameExecutable(target) {
 		fmt.Println("this process is still the old binary; restart it")
 	} else if !installed {
-		fmt.Println("service not registered; run 'snirect install' to add it")
+		fmt.Println("service not registered; run 'snirect service install' to add it")
 	}
 	return nil
 }

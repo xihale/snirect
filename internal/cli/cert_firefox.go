@@ -63,3 +63,7 @@ var firefoxStatusCmd = &cobra.Command{
 		return nil
 	},
 }
+
+func init() {
+	firefoxCertCmd.AddCommand(firefoxInstallCmd, firefoxRemoveCmd, firefoxStatusCmd)
+}

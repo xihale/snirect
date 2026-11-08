@@ -75,6 +75,9 @@ func BootstrapProxy(cmd *cobra.Command) (*ProxyEnv, error) {
 	if err != nil {
 		return nil, err
 	}
+	if portFlag > 0 {
+		cfg.Server.Port = portFlag
+	}
 
 	cd := certDir(appDir)
 	if err := os.MkdirAll(cd, 0o700); err != nil {
@@ -151,7 +154,9 @@ func RunProxy(cmd *cobra.Command, opts RunOptions) error {
 
 func setupLogging(cfg *config.Config, cmd *cobra.Command) {
 	level := cfg.Log.Level
-	if logLevel != "" {
+	if verboseFlag {
+		level = "debug"
+	} else if logLevel != "" {
 		level = logLevel
 	}
 	logger.SetLevel(level)

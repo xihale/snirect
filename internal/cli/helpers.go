@@ -10,7 +10,7 @@ import (
 	"github.com/xihale/snirect/internal/logger"
 )
 
-// loadAppConfig ensures the app dir exists and loads config.toml.
+// loadAppConfig ensures the app dir exists and loads config.toml (or configFile if specified).
 //
 // config.LoadConfig is intentionally lenient: on a parse error it returns a
 // non-nil config (the defaults overlaid with whatever decoded before the
@@ -22,12 +22,18 @@ func loadAppConfig() (*config.Config, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to initialize configuration: %w", err)
 	}
-	cfg, err := config.LoadConfig(filepath.Join(appDir, "config.toml"))
+
+	targetConfig := filepath.Join(appDir, "config.toml")
+	if configFile != "" {
+		targetConfig = configFile
+	}
+
+	cfg, err := config.LoadConfig(targetConfig)
 	if err != nil {
 		// cfg may still be non-nil (defaults + partial parse); surface the error
 		// loudly and proceed with the degraded config rather than crashing.
 		fmt.Fprintf(os.Stderr, "WARNING: config parse error in %s, using defaults: %v\n",
-			filepath.Join(appDir, "config.toml"), err)
+			targetConfig, err)
 		logger.Control().Error("config parse error, falling back to defaults", "error", err)
 		if cfg == nil {
 			return nil, appDir, fmt.Errorf("config is nil: %w", err)
@@ -45,7 +51,7 @@ func certDir(appDir string) string {
 }
 
 // pacURL builds the PAC auto-config URL the proxy serves. It is shared by the
-// `run`/`serve` lifecycle, the `proxy set` subcommand, and any other caller so
+// `run`/`serve` lifecycle, the `proxy on` subcommand, and any other caller so
 // the URL shape lives in exactly one place.
 func pacURL(host string, port int) string {
 	return fmt.Sprintf("http://%s:%d/pac/?t=%d", host, port, time.Now().Unix())

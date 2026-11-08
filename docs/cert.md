@@ -29,7 +29,7 @@ Steam 内置浏览器（`steamwebhelper`，基于 Chromium）有时不读取系�
 Firefox 系浏览器使用独立的 NSS 数据库（`cert9.db`）。先安装 `certutil`（Debian/Ubuntu 装 `libnss3-tools`，Arch/Fedora 装 `nss`，macOS `brew install nss`），关闭浏览器后执行：
 
 ```bash
-snirect cert firefox install
+snirect cert install --firefox
 ```
 
 ## 开发工具与语言运行时

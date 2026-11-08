@@ -91,6 +91,12 @@ func CheckFirefoxCert() (bool, error) {
 	return false, nil
 }
 
+// HasFirefoxProfiles reports whether any Firefox profile directory exists.
+func HasFirefoxProfiles() bool {
+	profiles, err := findFirefoxProfiles()
+	return err == nil && len(profiles) > 0
+}
+
 // InstallChromeCert installs the CA certificate to Chrome/Chromium's NSS database (~/.pki/nssdb).
 func InstallChromeCert(certPath string) error {
 	if _, err := exec.LookPath("certutil"); err != nil {

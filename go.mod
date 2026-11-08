@@ -3,7 +3,6 @@ module github.com/xihale/snirect
 go 1.25.5
 
 require (
-	github.com/kardianos/service v1.2.4
 	github.com/miekg/dns v1.1.72
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/spf13/cobra v1.10.2

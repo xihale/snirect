@@ -22,18 +22,17 @@ Snirect 是一个本地 HTTP/HTTPS 代理，用于在 TLS 握手阶段按内置�
 从 [Releases](https://github.com/xihale/snirect/releases) 下载对应平台二进制，或本地执行 `make build` 编译。
 
 ```bash
-# 安装根证书（首次使用必须，需要管理员/sudo 权限）
+# 安装根证书（首次使用必须，系统安装了 certutil 时会自动写入 Firefox NSS）
 snirect cert install
-snirect cert firefox install  # Firefox 用户需额外执行
 
 # 前台运行并设置系统 PAC 代理
-snirect -s
+snirect run -s
 ```
 
-注册为开机自启后台服务（systemd user / launchd / Windows Service）：
+注册为当前用户的后台自启服务（systemd --user / LaunchAgent / Windows 登录自启）：
 
 ```bash
-snirect install
+snirect service install -s
 snirect status
 ```
 

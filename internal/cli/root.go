@@ -8,8 +8,11 @@ import (
 )
 
 var (
-	setProxy bool
-	logLevel string
+	setProxy    bool
+	portFlag    int
+	configFile  string
+	logLevel    string
+	verboseFlag bool
 )
 
 var rootCmd = &cobra.Command{
@@ -25,32 +28,42 @@ Supports: Linux, macOS, Windows`,
 		return RunProxy(cmd, RunOptions{
 			OnReady: func(port int) {
 				fmt.Printf("\nSnirect running on port %d\n", port)
-				fmt.Printf("  Set proxy:  snirect proxy set\n")
-				fmt.Printf("  Shell env:  eval $(snirect proxy env)\n\n")
+				fmt.Printf("  Enable proxy: snirect proxy on\n")
+				fmt.Printf("  Shell env:    eval $(snirect proxy env)\n\n")
+			},
+		})
+	},
+}
+
+var runCmd = &cobra.Command{
+	Use:           "run",
+	Aliases:       []string{"serve"},
+	Short:         "Run proxy server in the foreground",
+	SilenceUsage:  true,
+	SilenceErrors: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return RunProxy(cmd, RunOptions{
+			OnReady: func(port int) {
+				fmt.Printf("\nSnirect running on port %d\n", port)
+				fmt.Printf("  Enable proxy: snirect proxy on\n")
+				fmt.Printf("  Shell env:    eval $(snirect proxy env)\n\n")
 			},
 		})
 	},
 }
 
 func init() {
-	rootCmd.Flags().BoolVarP(&setProxy, "set-proxy", "s", false, "Set system proxy on start")
-	rootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "v", "", "Log level (debug, info, warn, error)")
+	rootCmd.Version = Version
 
-	certCmd.AddCommand(certInstallCmd, certRemoveCmd, certStatusCmd)
-	certCmd.AddCommand(firefoxCertCmd)
-	firefoxCertCmd.AddCommand(firefoxInstallCmd, firefoxRemoveCmd, firefoxStatusCmd)
-
-	proxyCmd.AddCommand(proxySetCmd, proxyUnsetCmd, proxyEnvCmd)
-
-	configCmd.AddCommand(configResetCmd)
-
-	rulesDAECmd.Flags().StringVar(&rulesDAEPolicy, "policy", "snirect", "dae group the rules point to")
-	rulesClashCmd.Flags().StringVar(&rulesClashPolicy, "policy", "snirect", "clash policy the rules point to")
-	rulesCmd.AddCommand(rulesDAECmd, rulesClashCmd)
+	rootCmd.PersistentFlags().BoolVarP(&setProxy, "set-proxy", "s", false, "Set system proxy on start")
+	rootCmd.PersistentFlags().IntVarP(&portFlag, "port", "p", 0, "Override listen port (0 = use config)")
+	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "Custom config.toml path")
+	rootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "l", "", "Log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().BoolVarP(&verboseFlag, "verbose", "v", false, "Verbose output (shorthand for --log-level debug)")
 
 	rootCmd.AddCommand(
-		installCmd,
-		uninstallCmd,
+		runCmd,
+		serviceCmd,
 		certCmd,
 		proxyCmd,
 		configCmd,
