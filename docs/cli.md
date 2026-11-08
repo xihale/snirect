@@ -28,7 +28,7 @@
 
 下载走与代理相同的 Hosts-IP + 空 SNI 路径，整包落在一条 TCP 流上。这条流偶尔会落在远端 Fastly POP（实测 240 ms RTT、4% 丢包、~10 KB/s），字节还在滴所以看着像卡死。现在每次尝试都有守护：20 s 无字节判死、8 s 后均速低于 128 KiB/s 直接放弃，换新连接重试（最多 3 次），并把进度打到 stdout。
 
-证书固定的客户端（网银等）不信任用户 CA，用 PAC / 规则排除。uv / conda / Node / JVM 等自带证书库的工具怎么办，见 README「[CA 信任边界](../README.md#ca-信任边界)」。
+证书固定的客户端（网银等）不信任用户 CA，用 PAC / 规则排除。Steam、uv、conda、Node、JVM 等自带证书库的工具如何配置，见 [docs/cert.md](cert.md)。
 
 上游用 dae/clash 分流时，把 snirect 认识的域名导出去：
 

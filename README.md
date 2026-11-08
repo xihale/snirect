@@ -5,8 +5,6 @@
 
 **按规则改写 TLS SNI 的本地代理**
 
-桌面端 CLI（Linux / macOS / Windows）+ Android 应用，Go 实现
-
 [![CI](https://github.com/xihale/snirect/actions/workflows/ci.yml/badge.svg)](https://github.com/xihale/snirect/actions/workflows/ci.yml)
 [![Release](https://github.com/xihale/snirect/actions/workflows/release.yml/badge.svg)](https://github.com/xihale/snirect/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -15,129 +13,42 @@
 
 ---
 
-## 这是什么
+Snirect 是一个本地 HTTP/HTTPS 代理，用于在 TLS 握手阶段按内置规则改写或剥离 ClientHello 中的 SNI，并对需要的站点使用本机生成的根 CA 做 MITM 中转。内置规则同步自 [Cealing-Host](https://github.com/SpaceTimee/Cealing-Host) 并做了适配，编译期静态写入，运行时不联网拉取。
 
-Snirect 是一个本地 HTTP/HTTPS 代理。对 TLS 流量，它在握手阶段读出 ClientHello 里的 SNI，按内置规则改写后转发，用于应对基于 SNI 的过滤；可选用本机生成的根 CA 做 MITM 解密。
-
-功能：
-
-- **SNI 改写**：规则支持 `example.com` / `*.example.com` / `*example.com` 三种写法；改写目标为空即剥掉 SNI
-- **证书策略**：`CertVerify` 按域名放行证书、`IgnoreExpiry` 忽略过期证书、`Hosts` 把域名指到固定 IP 绕过 DNS
-- **MITM**：本机生成根 CA 并签发叶证书（带缓存），系统需信任该 CA 才能解密；Firefox 用独立的 NSS 库，单独安装（哪些程序不认系统 CA，见 [CA 信任边界](#ca-信任边界)）
-- **DNS**：UDP / TCP / DoT / DoH 上游，域名上游可用 IP bootstrap 解析，ECS 支持 auto 模式；IP 优选支持 standard / ipv6 / ipv4 模式
-- **系统代理**：设置 PAC；`proxy env` 打印终端用的 `http_proxy` 命令，配合 `eval` 使用
-- **tunnel hook**：站点级修正逻辑挂在转发路径外，目前只有 GitHub codeload 重定向修正一处
+支持 Linux、macOS、Windows 桌面端 CLI 与 Android 客户端（基于 `VpnService` + gVisor netstack）。
 
 ## 快速开始
 
-预编译包在 [Releases](https://github.com/xihale/snirect/releases)，或自己编译：
+从 [Releases](https://github.com/xihale/snirect/releases) 下载对应平台二进制，或本地执行 `make build` 编译。
 
 ```bash
-make build
+# 安装根证书（首次使用必须，需要管理员/sudo 权限）
+snirect cert install
+snirect cert firefox install  # Firefox 用户需额外执行
+
+# 前台运行并设置系统 PAC 代理
+snirect -s
 ```
 
-运行：
+注册为开机自启后台服务（systemd user / launchd / Windows Service）：
 
 ```bash
-./dist/snirect -s           # 前台运行，-s 同时设系统代理
-./dist/snirect cert install # 要解密 HTTPS 就先装根 CA
-./dist/snirect cert firefox install # Firefox 另走 NSS 库，需要再执行这条
+snirect install
+snirect status
 ```
 
-装成后台服务（systemd user / launchd / Windows Service）：
+## 文档
 
-```bash
-./dist/snirect install
-./dist/snirect status       # 服务 / 系统代理 / CA / 端口占用情况
-```
-
-完整命令表见 [docs/cli.md](docs/cli.md)。
-
-## Android
-
-仓库同时包含 Android 应用（`android/`）。Go 核心经 gomobile 编译成 `core.aar`，Kotlin 层用 `VpnService`（TUN）+ [gVisor netstack](https://gvisor.dev) 用户态协议栈接住 TUN 流量，为每条 TCP 流合成 CONNECT 请求发给环回上的 Go 代理；出站 socket 经 `VpnService.protect()` 绕开 TUN 防止环路。支持按应用白/黑名单过滤流量。
-
-数据链路细节见 [android/bindings/README.md](android/bindings/README.md)，构建见 [docs/build.md](docs/build.md)。
-
-## 平台支持
-
-| 平台 | 架构 | 系统代理 | CA 安装 |
-| :--- | :--- | :--- | :--- |
-| Linux | amd64 / arm64 | PAC (gsettings / kwriteconfig5) | trust (p11-kit)，回退发行版目录；Firefox 走 NSS |
-| macOS | amd64 / arm64 | 系统网络设置 | Keychain (`security add-trusted-cert`) |
-| Windows | amd64 / arm64 | 注册表 PAC | 系统证书库 |
-| Android | arm64 / x86_64 | VpnService (TUN)，应用白/黑名单 | 用户证书导入引导 |
-
-## 配置
-
-配置文件位于 `~/.config/snirect/config.toml`（Windows 为 `%APPDATA%\snirect\config.toml`），所有项都有内置默认值，注释掉即回落默认。详见 [docs/config.md](docs/config.md) 与 `internal/config/defaults.go` 中的完整示例。
-
-分流规则静态编进二进制（`internal/rules/builtin_rules.go`），其中 SNI 改写与 Hosts 表同步自 [Cealing-Host](https://github.com/SpaceTimee/Cealing-Host) 项目并做了适配，运行时不联网拉取。
-
-## CA 信任边界
-
-`cert install` 只覆盖读系统证书库的程序（浏览器、curl、git、Go 系 CLI）。很多工具自带根证书库、不读系统库，装完 CA 照样报 `certificate verify failed`：
-
-| 程序 | 默认证书来源 | 解法 |
-| :--- | :--- | :--- |
-| uv | 内置 Mozilla 根集 | `UV_SYSTEM_CERTS=1`（或 `uv --system-certs`） |
-| conda | 环境内 certifi | `conda config --set ssl_verify <拼合包>`，或 `REQUESTS_CA_BUNDLE=<拼合包>` |
-| pip / requests | certifi（pip ≥ 24.2 且 Python ≥ 3.10 时已默认读系统库） | `PIP_CERT=<拼合包>` / `REQUESTS_CA_BUNDLE=<拼合包>` |
-| Node.js | 内置 Mozilla 根集 | `NODE_EXTRA_CA_CERTS=<root.crt>`；v22.15+ / v24+ 也可 `NODE_USE_SYSTEM_CA=1` |
-| JVM（Java / Gradle / Android SDK 下载器） | 自带 `cacerts` | `keytool -importcert -cacerts -alias snirect -file <root.crt>`（口令默认 `changeit`） |
-| Firefox / Thunderbird | 独立 NSS 库 | `snirect cert firefox install` |
-
-`<拼合包>` = 系统根集 + snirect CA 顺序拼接。注意 `PIP_CERT` / `REQUESTS_CA_BUNDLE` / conda `ssl_verify` / uv `SSL_CERT_FILE` 都是**替换**语义：只指 `root.crt` 会把没走 MITM 的站点一起拒掉。系统 bundle：Linux 为 `/etc/ssl/certs/ca-certificates.crt`（`cert install` 后已含 snirect CA，可直接指）、macOS 为 `/etc/ssl/cert.pem`、Windows 可取 Python `certifi.where()` 那份拼。`NODE_EXTRA_CA_CERTS` 与 keytool 是追加语义，指 `root.crt` 即可。
-
-CA 路径：`~/.config/snirect/certs/root.crt`（Windows `%APPDATA%\snirect\certs\root.crt`）。另注意 macOS 的 Keychain 信任只有 Safari / Chrome / Go 系认；curl / git（尤其 Homebrew 版）仍报证书错误时，把 `root.crt` 拼进各自读的 bundle。
-
-装了 CA 也不生效的两类流量：
-
-- **证书固定**：网银、部分 Google / IM 客户端把证书 pin 死在程序内，MITM 会让握手直接失败，用 PAC / 规则把这类域名排除
-- **Android 用户证书**：targetSdk ≥ 24 的 App 默认只信任系统库，用户证书对多数 App 无效。要解密：
-    - root 后把 CA 移进系统库（Magisk 模块）
-    - LSPosed + trustme 类 hook 模块（TrustMeAlready 等），把 App 的证书校验 hook 成信任用户证书
-    - 免 root 对单个 APK 打补丁：NPatch / LSPatch（实测 Wikipedia App 可行）
-    - 注意：App 内置安全 DNS（DoH，绕开系统解析）时，hook 方案同样会失效
-
-## 目录结构
-
-```text
-├── cmd/snirect/        CLI 入口
-├── internal/
-│   ├── cert/           根 CA 管理、叶证书签发与缓存
-│   ├── cli/            cobra 命令：install/cert/proxy/config/update…
-│   ├── color/          终端着色
-│   ├── config/         TOML 加载、默认值、样例配置
-│   ├── dns/            DoH/DoT/plain 解析器、bootstrap、IP 优选
-│   ├── logger/         日志
-│   ├── proxy/          代理核心：CONNECT、SNI 嗅探改写、tunnel hook
-│   ├── rules/          内置分流规则与匹配索引
-│   ├── service/        后台服务封装（kardianos/service）
-│   ├── sysproxy/       各平台系统代理与 CA 安装实现
-│   └── update/         GitHub Releases 自更新 + SHA256 校验
-├── android/            Android 应用（Kotlin + Compose）
-│   └── bindings/       gomobile 绑定层，产出 core.aar
-├── docs/               命令、配置、构建文档
-└── scripts/            CI 辅助脚本
-```
-
-## 开发
-
-```bash
-make test     # 单元测试
-make lint     # golangci-lint
-make crossAll # 交叉编译 linux/darwin/windows × amd64/arm64 共 6 个平台
-make debug    # Android Debug 构建
-```
-
-发布流程是 git tag + GitHub Actions（CLI 走 `v*`，Android 走 `android-v*`，两条线独立发版），见 [docs/build.md](docs/build.md)。
+- [命令行用法与上游分流导出（dae / clash）](docs/cli.md)
+- [配置文件与规则格式](docs/config.md)
+- [证书信任（Steam / Firefox / Python / Node / JVM / Android）](docs/cert.md)
+- [编译、交叉构建与发版](docs/build.md)
+- [Android 端架构与 gomobile 绑定层](android/bindings/README.md)
 
 ## 致谢
 
-- [Cealing-Host](https://github.com/SpaceTimee/Cealing-Host)：内置 SNI 改写与 Hosts 规则来源
-- [gVisor](https://gvisor.dev)：Android 端用户态 TCP/IP 协议栈
-- [gomobile](https://pkg.go.dev/golang.org/x/mobile/cmd/gomobile)：Go ↔ Android 绑定
+- [Cealing-Host](https://github.com/SpaceTimee/Cealing-Host)：上游 SNI 改写与 Hosts 规则
+- [gVisor](https://gvisor.dev)：Android 端用户态协议栈
 
 ## 许可
 
