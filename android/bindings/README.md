@@ -1,58 +1,57 @@
-# Snirect Android Bindings (Go Gomobile 绑定层)
+# Snirect Android Bindings（gomobile 绑定层）
 
-`android/bindings` 是 Snirect 面向 Android 系统的 Go 语言胶水模块。它通过 [gomobile](https://pkg.go.dev/golang.org/x/mobile/cmd/gomobile) 编译生成 `core.aar`，将平台无关的 Go 核心代理能力与 Android 系统的 `VpnService`（TUN 虚拟网卡）对接。
+`android/bindings`（Go package `core`）是 Snirect 面向 Android 的胶水层，通过 `gomobile bind` 编译为 `core.aar`，将平台无关的核心代理（`internal/proxy`、`internal/dns`、`internal/cert`、`internal/rules`、`internal/update`）与 Android `VpnService`（TUN 虚拟网卡）对接。
 
----
+## 1. 数据链路
 
-## 1. 核心架构与数据链路
+Android VPN 捕获的是直连目的 IP 的原始 IP 报文，而非 HTTP 代理请求。`core` 在本地完成协议桥接：
 
-在 Android 系统中，应用层发出的并非代理请求，而是直连目的 IP 的原始 TCP 报文。`mobile` 负责完成数据平面的协议适配：
-
-```ascii
+```text
 [Android App 流量]
        │
-       ▼ (TUN 文件描述符 / IP 报文)
-[gVisor netstack] (用户态协议栈，终结 TCP 连接，获取原始目的 IP:Port)
+       ▼ (VpnService TUN FD，dup 后交由 Go 独占关闭)
+[gVisor netstack] (10.0.0.2/24，终结 TCP/UDP，保留原始目的 IP:Port)
        │
-       ▼ (TCP 流转发)
-[relayToProxy] ──> 合成 "CONNECT <orig-dst-ip>:<port> HTTP/1.1"
+       ├── UDP :53 ──> [handleDNS]
+       │                 ├─ IPv6=false 时 AAAA 直接返回空 NOERROR
+       │                 ├─ 命中 Hosts 规则时直接返回静态 A 记录
+       │                 └─ 其余走共享 dns.Resolver（经 protect() 出站，失败重试一次否则 SERVFAIL）
        │
-       ▼ (127.0.0.1 环回连接)
-[Snirect Proxy]
-       │
-       ├──> [ClientHello Peek] 嗅探真实 SNI 扩展并匹配分流规则
-       ├──> [AlterHostname / CertVerify] 动态 MITM 或直连穿透
-       │
-       ▼ (通过 protect() 绕过 TUN 的 Outbound Socket)
-[目标远端服务器]
+       └── TCP ──────> [relayToProxy] 合成 "CONNECT <dst-ip>:<port> HTTP/1.1"
+                         │             附带 X-Snirect-Src 与（443 端口）X-Snirect-Uid
+                         ▼ (127.0.0.1:<auto> 环回)
+                       [proxy.ProxyServer]
+                         ├─ ClientHello Peek 提取 SNI 并匹配内置规则
+                         ├─ 命中规则：按 AlterHostname / CertVerify 执行 MITM
+                         ├─ 未命中：直接透传；客户端拒绝叶证书则触发 OnCertRejected
+                         │
+                         ▼ (bypassDialer → EngineCallbacks.Protect(fd))
+                       [远端服务器]
 ```
 
----
+## 2. 关键机制
 
-## 2. 核心技术机制
+- **合成 CONNECT 转发（`netstack.go`）**：TUN 捕获的 TCP 流从 gVisor forwarder 获取原始目的地址后，向本地 `ProxyServer` 发送合成的 `CONNECT <ip>:<port> HTTP/1.1`，复用与桌面端完全一致的 SNI 嗅探、MITM 与证书校验流水线。
+- **套接字逃逸（`platform_android.go`）**：所有由 Go 核心发起的出站 TCP 连接与加密 DNS 查询都使用 `bypassDialer`，在建立连接前调用 `EngineCallbacks.Protect(fd)` 触发 `VpnService.protect(fd)`，避免流量回环进 TUN。
+- **按流应用归属与证书固定检测（`sockdiag_netlink.go` / `lib.go`）**：对 `:443` 流优先通过内核 `NETLINK_SOCK_DIAG` 查询套接字 UID，查不到时回退 `EngineCallbacks.LookupUID`；若客户端在收到叶证书后中止握手，代理通过 `OnCertRejected` 上报 `{uid, src, host, err}` JSON，供 Kotlin 侧自动排除对应应用。
+- **TUN FD 生命周期安全（`platform_android.go`）**：`newTunFile` 先 `syscall.Dup(fd)` 再交由 `os.NewFile` 接管，保证 Go 与 Kotlin 各自安全关闭互不干扰，避免重连时 double-close 引发崩溃。
 
-### 2.1 合成 CONNECT 转发 (`netstack.go`)
-- **机制**：TUN 捕获的 TCP 流通过 gVisor forwarder 获取目的地址（`r.ID().LocalAddress` 与 `LocalPort`）。
-- **适配**：在将流注入本地 `ProxyServer` 时，先自动写入合成的 `CONNECT <ip>:<port> HTTP/1.1\r\n\r\n`，使所有透明流量平滑进入通用代理的 MITM / SNI 重写处理流水线。
+## 3. 导出接口与生命周期契约
 
-### 2.2 DNS 劫持与 AAAA 拦截过滤
-- **UDP:53 拦截**：TUN 内发往 53 端口的 DNS 请求直接转交 Go 解析器，使用配置的安全 DoH/DoT 上游解析。
-- **AAAA 拦截机制**：当 `IPv6 = false` 时，对 AAAA 查询直接响应空 `NOERROR`（表示域名存在但无 IPv6 记录），强制应用回退至 IPv4，避免因运营商 IPv6 路由黑洞导致的连接假死。
+Kotlin 侧通过 `SnirectCoreClient` 调用的导出符号（`lib.go` / `update.go`）：
 
-### 2.3 套接字逃逸 (`protect()`)
-- 所有由 Go 核心主动向外发起的出站 TCP 连接和 DNS 查询套接字，必须经过 `EngineCallbacks.Protect(fd)` 处理，调用 Android `VpnService.protect(fd)` 排除在 TUN 路由之外，杜绝流量自环。
+- `SetDataDir(path string)`：设置 CA 证书与私钥存放目录（`ca.crt` / `ca.key`），需在启动或导出证书前调用。
+- `StartEngine(fd int, configStr string, cb EngineCallbacks)`：同步解析 JSON 配置后立即返回，在后台协程完成 CA 初始化、代理监听与 netstack 启动；内部维护 `epoch` 代际计数器消除连续启停竞态。
+- `StopEngine()`：同步幂等停止当前引擎、关闭 netstack/代理/解析器/CA，并触发终态回调。
+- `GetCACertificate() []byte`：返回根 CA PEM（引擎未运行时按需冷加载并在读取后清理）。
+- `CheckUpdate(current string) (*UpdateInfo, error)`：通过代理同款的 Hosts-IP + 空 SNI 路径检查 Android 最新 Release。
 
-### 2.4 健壮的生命周期契约 (`lib.go`)
-- **非阻塞启动**：`StartEngine` 立即返回，所有繁重的密钥生成、规则加载及网络监听全在后台协程执行。
-- **代际安全 (Epoch)**：内部维护代际计数器，彻底解决快速点击切换时的 Start/Stop 竞态与双启动泄漏。
-- **显式状态回调**：
-  - `OnEngineStarted()`：所有组件就绪，代理端口开始正常服务。
-  - `OnEngineError(reason)`：遇到启动异常或运行时致命故障（如 TUN 异常断开）时触发，并自动完成资源回收。
-  - `OnEngineStopped(reason)`：显式调用 `StopEngine` 后的终态回调。
+`EngineCallbacks` 回调契约：
 
----
+- `OnEngineStarted()`：CA、DNS 解析器、本地代理与 netstack 全部就绪后触发一次。
+- `OnEngineError(reason string)`：启动失败（含同步 JSON 解析失败）或运行时致命异常时触发一次并完成资源清理，之后不再触发 `OnEngineStopped`。
+- `OnEngineStopped(reason string)`：显式调用 `StopEngine()` 且确实存在运行/启动中引擎时触发一次。
+- `OnStatusChanged(status string)`：异步日志流回调（覆盖 `core` 与共享 `internal/logger`）。
+- `Protect(fd int) bool` / `LookupUID(...) int32` / `OnCertRejected(payload string)`：出站保护、UID 兜底查询与证书固定遥测。
 
-## 3. 导出符号约束
-
-- 严禁在 `mobile-core` 中定义多余的非必要导出结构体（如业务 Rule 模型）。
-- 所有与 Kotlin 交互的配置通过 JSON 字符串统一传递，保持 JNI 边界轻量稳定。
+导出边界约束：避免在 `core` 中直接导出复杂业务结构体；与 Kotlin 间的配置及遥测数据通过简单参数或 JSON 字符串传递。
