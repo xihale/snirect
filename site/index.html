@@ -53,15 +53,15 @@
 
   <section class="results">
     <div class="term">
+      <p class="term-bar">snirect rules match zh.wikipedia.org</p>
+      <pre><span class="c-dim">Host:         </span>185.15.59.224
+<span class="c-dim">SNI:          </span><span class="c-hi">&lt;stripped&gt;</span>
+<span class="c-dim">CertVerify:   </span>default (true)
+<span class="c-dim">IgnoreExpiry: </span>false</pre>
       <p class="term-bar">snirect rules match www.android.com</p>
       <pre><span class="c-dim">Host:         </span>64.233.160.142
 <span class="c-dim">SNI:          </span><span class="c-hi">g.cn</span>
 <span class="c-dim">CertVerify:   </span>*.google.cn, google.cn, g.cn, *.g.cn
-<span class="c-dim">IgnoreExpiry: </span>false</pre>
-      <p class="term-bar">snirect rules match github.com</p>
-      <pre><span class="c-dim">Host:         </span>20.27.177.113
-<span class="c-dim">SNI:          </span><span class="c-hi">&lt;stripped&gt;</span>
-<span class="c-dim">CertVerify:   </span>default (true)
 <span class="c-dim">IgnoreExpiry: </span>false</pre>
     </div>
 
@@ -79,17 +79,49 @@
     </div>
   </section>
 
-  <section class="split">
-    <div class="split-card">
-      <span class="badge is-hit">命中</span>
-      <h2>MITM</h2>
-      <p>改写 SNI，本机根 CA 中转</p>
+  <section class="block">
+    <p class="block-label">GFW 场景 · 同一个站点，两个 SNI</p>
+    <div class="paths">
+      <article class="path is-blocked">
+        <span class="badge is-block">旧 SNI · 拦截</span>
+        <h2>握手被重置</h2>
+        <p class="kv"><span>ClientHello SNI</span><br><b class="strike">zh.wikipedia.org</b></p>
+        <p class="path-note">明文域名出境，GFW 直接 RST。</p>
+      </article>
+
+      <article class="path">
+        <span class="badge is-ok">新 SNI · 放行</span>
+        <h2>剥离后前置</h2>
+        <p class="kv"><span>命中 *wikipedia.org</span><br><b class="val">&lt;stripped&gt;</b> <span>→</span> <b class="val">185.15.59.224</b></p>
+        <p class="path-note">ClientHello 里没有域名，认不出来。</p>
+      </article>
+
+      <article class="path">
+        <span class="badge is-ok">新 SNI · 放行</span>
+        <h2>改写后前置</h2>
+        <p class="kv"><span>命中 *android.com</span><br><b class="val">g.cn</b> <span>→</span> <b class="val">64.233.160.142</b></p>
+        <p class="path-note">SNI 换成可达的名字，前置照旧。</p>
+      </article>
     </div>
-    <div class="split-card">
-      <span class="badge">未命中</span>
-      <h2>直连</h2>
-      <p>原始证书，原样透传</p>
+  </section>
+
+  <section class="block">
+    <p class="block-label">隐私边界</p>
+    <div class="privacy">
+      <article class="path">
+        <span class="badge is-ok">命中规则</span>
+        <h2>本机解密</h2>
+        <p class="kv"><span>证书</span> <b>本机根 CA</b><br><span>内容</span> <b>本机可见</b></p>
+        <p class="path-note">只对命中规则的 443 生效。</p>
+      </article>
+      <article class="path">
+        <span class="badge is-block">未命中</span>
+        <h2>端到端 TLS</h2>
+        <p class="kv"><span>证书</span> <b>远端原始证书</b><br><span>内容</span> <b>snirect 看不到</b></p>
+        <p class="path-note">TCP 直通，握手不落盘、不解密。</p>
+      </article>
     </div>
+    <p class="block-foot">根 CA 只装在本机 · 规则编译进二进制 · 运行时不联网拉取</p>
   </section>
 
   <section class="install">
