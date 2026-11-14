@@ -35,7 +35,7 @@ Spacing on a 4px grid. Radius: 0. No gradients, no blurred shadows, no rounded p
 3. **Results** — two terminal cards, real output only:
    `snirect rules match zh.wikipedia.org` (SNI stripped) and `snirect rules match www.android.com`
    (SNI rewritten), plus `snirect status`.
-4. **GFW 场景** — one blocked card (old SNI `zh.wikipedia.org` → GFW RST, hatched ground) against two
+4. **GFW 场景 · 两条路** — a two-lane flow: 旧 SNI (`zh.wikipedia.org` → same front → GFW RST, hatched ground) against 新 SNI (命中 `*wikipedia.org` → `<stripped>` → 185.15.59.224 境内纯净 IP → 放行).
    allowed cards (`*wikipedia.org` → `<stripped>` → `185.15.59.224`; `*android.com` → `g.cn` → `64.233.160.142`).
 5. **隐私边界** — 命中规则 → 本机根 CA 解密，内容本机可见；未命中 → 远端原始证书，端到端 TLS 不解密。
    Footline: 根 CA 只在本机 · 规则编译进二进制 · 运行时不联网拉取。
