@@ -29,14 +29,24 @@ func isGitHubHTTPHost(host string) bool {
 }
 
 func isCodeloadBlobPath(path string) bool {
-	// /<owner>/<repo>/(tar.gz|zip|legacy.tar.gz|legacy.zip)/...
-	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) < 3 {
+	// /<owner>/<repo>/(tar.gz|zip|legacy.tar.gz|legacy.zip|tarball|zipball)/...
+	path = strings.TrimPrefix(path, "/")
+	i := strings.IndexByte(path, '/')
+	if i <= 0 {
 		return false
 	}
-	switch parts[2] {
+	rest := path[i+1:]
+	j := strings.IndexByte(rest, '/')
+	if j <= 0 {
+		return false
+	}
+	rest = rest[j+1:]
+	if k := strings.IndexByte(rest, '/'); k >= 0 {
+		rest = rest[:k]
+	}
+	switch rest {
 	case "tar.gz", "zip", "legacy.tar.gz", "legacy.zip", "tarball", "zipball":
-		return parts[0] != "" && parts[1] != ""
+		return true
 	}
 	return false
 }
@@ -81,12 +91,14 @@ func (githubHook) serveH1(s *ProxyServer, client, remote net.Conn, host, clientA
 	s.serveGitHubH1(client, remote, host, clientAddr, ctx)
 }
 
+const githubReaderBufSize = 32 * 1024
+
 func (s *ProxyServer) serveGitHubH1(client, remote net.Conn, host, clientAddr string, ctx context.Context) {
 	defer client.Close()
 	defer remote.Close()
 
-	cbr := bufio.NewReader(client)
-	rbr := bufio.NewReader(remote)
+	cbr := bufio.NewReaderSize(client, githubReaderBufSize)
+	rbr := bufio.NewReaderSize(remote, githubReaderBufSize)
 	for {
 		req, err := http.ReadRequest(cbr)
 		if err != nil {
@@ -153,7 +165,7 @@ func (s *ProxyServer) fetchIntern(ctx context.Context, clientAddr, method, host,
 		return nil, errTooManyInternRedirects
 	}
 	targetSNI := s.determineSNI(host, host)
-	rc, err := s.connectToRemote(ctx, host, "443", clientAddr, targetSNI, []string{"http/1.1"})
+	rc, err := s.connectToRemote(ctx, host, "443", clientAddr, host, targetSNI, []string{"http/1.1"})
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +193,7 @@ func (s *ProxyServer) fetchIntern(ctx context.Context, clientAddr, method, host,
 		rc.Close()
 		return nil, err
 	}
-	resp, err := http.ReadResponse(bufio.NewReader(rc), out)
+	resp, err := http.ReadResponse(bufio.NewReaderSize(rc, githubReaderBufSize), out)
 	if err != nil {
 		rc.Close()
 		return nil, err

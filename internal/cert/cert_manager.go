@@ -1,6 +1,7 @@
 package cert
 
 import (
+	"container/list"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -16,14 +17,23 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
+
+const maxCertCacheSize = 2048
 
 // CertificateManager manages the Root CA and signs leaf certificates for proxying.
 type CertificateManager struct {
-	RootCert  *x509.Certificate
-	RootKey   interface{}
-	certCache sync.Map // map[string]*tls.Certificate
-	stopChan  chan struct{}
+	RootCert     *x509.Certificate
+	RootKey      interface{}
+	certCache    sync.Map // map[string]*tls.Certificate
+	sf           singleflight.Group
+	cacheMu      sync.Mutex
+	cacheOrder   *list.List
+	cacheIndex   map[string]*list.Element
+	maxCacheSize int // 0 uses maxCertCacheSize
+	stopChan     chan struct{}
 }
 
 // NewCertificateManager creates a new CertificateManager, loading existing CA files or generating new ones.
@@ -252,6 +262,50 @@ func (cm *CertificateManager) SignLeafCert(hosts []string) ([]byte, interface{},
 	return derBytes, priv, nil
 }
 
+func (cm *CertificateManager) cacheLimit() int {
+	if cm.maxCacheSize > 0 {
+		return cm.maxCacheSize
+	}
+	return maxCertCacheSize
+}
+
+func (cm *CertificateManager) storeCert(host string, cert *tls.Certificate) {
+	cm.cacheMu.Lock()
+	defer cm.cacheMu.Unlock()
+
+	if cm.cacheIndex == nil {
+		cm.cacheIndex = make(map[string]*list.Element)
+		cm.cacheOrder = list.New()
+	}
+	if elem, ok := cm.cacheIndex[host]; ok {
+		cm.cacheOrder.MoveToBack(elem)
+	} else {
+		limit := cm.cacheLimit()
+		for cm.cacheOrder.Len() >= limit {
+			front := cm.cacheOrder.Front()
+			if front == nil {
+				break
+			}
+			oldest := front.Value.(string)
+			cm.cacheOrder.Remove(front)
+			delete(cm.cacheIndex, oldest)
+			cm.certCache.Delete(oldest)
+		}
+		cm.cacheIndex[host] = cm.cacheOrder.PushBack(host)
+	}
+	cm.certCache.Store(host, cert)
+}
+
+func (cm *CertificateManager) deleteCert(host string) {
+	cm.cacheMu.Lock()
+	cm.certCache.Delete(host)
+	if elem, ok := cm.cacheIndex[host]; ok {
+		cm.cacheOrder.Remove(elem)
+		delete(cm.cacheIndex, host)
+	}
+	cm.cacheMu.Unlock()
+}
+
 func (cm *CertificateManager) cleanupRoutine() {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
@@ -261,18 +315,33 @@ func (cm *CertificateManager) cleanupRoutine() {
 		case <-cm.stopChan:
 			return
 		case <-ticker.C:
-			cm.certCache.Range(func(key, value interface{}) bool {
-				cert := value.(*tls.Certificate)
-				if len(cert.Certificate) > 0 {
-					x509Cert, err := x509.ParseCertificate(cert.Certificate[0])
-					if err == nil {
-						if time.Now().After(x509Cert.NotAfter) {
-							cm.certCache.Delete(key)
-						}
-					}
-				}
-				return true
-			})
+			cm.pruneExpired(time.Now())
+		}
+	}
+}
+
+func (cm *CertificateManager) pruneExpired(now time.Time) {
+	var expired []interface{}
+	cm.certCache.Range(func(key, value interface{}) bool {
+		cert := value.(*tls.Certificate)
+		if cert.Leaf != nil {
+			if now.After(cert.Leaf.NotAfter) {
+				expired = append(expired, key)
+			}
+			return true
+		}
+		if len(cert.Certificate) > 0 {
+			if x509Cert, err := x509.ParseCertificate(cert.Certificate[0]); err == nil && now.After(x509Cert.NotAfter) {
+				expired = append(expired, key)
+			}
+		}
+		return true
+	})
+	for _, key := range expired {
+		if host, ok := key.(string); ok {
+			cm.deleteCert(host)
+		} else {
+			cm.certCache.Delete(key)
 		}
 	}
 }

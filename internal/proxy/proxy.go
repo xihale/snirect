@@ -5,6 +5,7 @@ package proxy
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/xihale/snirect/internal/config"
@@ -62,6 +64,91 @@ type ProxyServer struct {
 	// dialer so the proxy's own upstream traffic escapes the TUN instead of
 	// looping back into the capture route.
 	outboundDialer *net.Dialer
+
+	upstreamCacheOnce sync.Once
+	upstreamCache     tls.ClientSessionCache
+	ticketKeyOnce     sync.Once
+	ticketKeys        [][32]byte
+
+	shutdownOnce   sync.Once
+	shutdownCtx    context.Context
+	shutdownCancel context.CancelFunc
+
+	mu            sync.Mutex
+	shuttingDown  bool
+	hijackedConns map[net.Conn]struct{}
+	hijackedWG    sync.WaitGroup
+}
+
+// prefixedSessionCache isolates upstream TLS sessions per (host, remoteAddr)
+// so distinct origins sharing an altered/stripped targetSNI never collide.
+type prefixedSessionCache struct {
+	prefix string
+	inner  tls.ClientSessionCache
+}
+
+func (c *prefixedSessionCache) Get(sessionKey string) (*tls.ClientSessionState, bool) {
+	return c.inner.Get(c.prefix + sessionKey)
+}
+
+func (c *prefixedSessionCache) Put(sessionKey string, cs *tls.ClientSessionState) {
+	c.inner.Put(c.prefix+sessionKey, cs)
+}
+
+func (s *ProxyServer) clientSessionCache() tls.ClientSessionCache {
+	s.upstreamCacheOnce.Do(func() {
+		s.upstreamCache = tls.NewLRUClientSessionCache(1024)
+	})
+	return s.upstreamCache
+}
+
+func (s *ProxyServer) sessionTicketKeys() [][32]byte {
+	s.ticketKeyOnce.Do(func() {
+		var key [32]byte
+		if _, err := rand.Read(key[:]); err != nil {
+			logger.Client().Warn("failed to generate session ticket key", "error", err)
+			return
+		}
+		s.ticketKeys = [][32]byte{key}
+	})
+	return s.ticketKeys
+}
+
+func (s *ProxyServer) serverContext() context.Context {
+	s.shutdownOnce.Do(func() {
+		s.shutdownCtx, s.shutdownCancel = context.WithCancel(context.Background())
+	})
+	return s.shutdownCtx
+}
+
+func (s *ProxyServer) dialTimeout() time.Duration {
+	if s.Config != nil && s.Config.Timeout.Dial > 0 {
+		return time.Duration(s.Config.Timeout.Dial) * time.Second
+	}
+	return 30 * time.Second
+}
+
+func (s *ProxyServer) trackHijackedConn(c net.Conn) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.shuttingDown {
+		return false
+	}
+	if s.hijackedConns == nil {
+		s.hijackedConns = make(map[net.Conn]struct{})
+	}
+	s.hijackedConns[c] = struct{}{}
+	s.hijackedWG.Add(1)
+	return true
+}
+
+func (s *ProxyServer) untrackHijackedConn(c net.Conn) {
+	s.mu.Lock()
+	if _, ok := s.hijackedConns[c]; ok {
+		delete(s.hijackedConns, c)
+		s.hijackedWG.Done()
+	}
+	s.mu.Unlock()
 }
 
 // NewProxyServer creates a new ProxyServer instance.
@@ -70,13 +157,17 @@ func NewProxyServer(cfg *config.Config, rules *rules.Rules, ca CertificateManage
 	if cfg.Limit.MaxConns > 0 {
 		sem = make(chan struct{}, cfg.Limit.MaxConns)
 	}
-	return &ProxyServer{
+	ps := &ProxyServer{
 		Config:    cfg,
 		Rules:     rules,
 		CA:        ca,
 		Resolver:  resolver,
 		semaphore: sem,
 	}
+	ps.clientSessionCache()
+	ps.sessionTicketKeys()
+	ps.serverContext()
+	return ps
 }
 
 // SetOutboundDialer injects the dialer used for upstream TCP connections. It is
@@ -118,7 +209,12 @@ func (s *ProxyServer) Listen() error {
 	if s.Config.Server.Port == 0 {
 		s.Config.Server.Port = ln.Addr().(*net.TCPAddr).Port
 	}
-	s.server = &http.Server{Handler: s}
+	baseCtx := s.serverContext()
+	s.server = &http.Server{
+		Handler:           s,
+		ReadHeaderTimeout: 30 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return baseCtx },
+	}
 	logger.System().Info("proxy server listening", "addr", ln.Addr().String())
 	return nil
 }
@@ -135,10 +231,42 @@ func (s *ProxyServer) Serve() error {
 
 // Shutdown gracefully shuts down the proxy server, waiting for active connections to complete.
 func (s *ProxyServer) Shutdown(ctx context.Context) error {
-	if s.server != nil {
-		return s.server.Shutdown(ctx)
+	s.serverContext()
+	if s.shutdownCancel != nil {
+		s.shutdownCancel()
 	}
-	return nil
+
+	s.mu.Lock()
+	s.shuttingDown = true
+	conns := make([]net.Conn, 0, len(s.hijackedConns))
+	for c := range s.hijackedConns {
+		conns = append(conns, c)
+	}
+	s.mu.Unlock()
+
+	for _, c := range conns {
+		_ = c.Close()
+	}
+
+	var serverErr error
+	if s.server != nil {
+		serverErr = s.server.Shutdown(ctx)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		s.hijackedWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return serverErr
+	case <-ctx.Done():
+		if serverErr != nil {
+			return serverErr
+		}
+		return ctx.Err()
+	}
 }
 
 // ServeHTTP handles HTTP requests by routing CONNECT to the proxy handler
@@ -211,8 +339,13 @@ func isLoopbackRemote(remoteAddr string) bool {
 // handleConnect handles the HTTP CONNECT method for HTTPS tunneling.
 func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	if s.semaphore != nil {
-		s.semaphore <- struct{}{}
-		defer func() { <-s.semaphore }()
+		select {
+		case s.semaphore <- struct{}{}:
+			defer func() { <-s.semaphore }()
+		case <-r.Context().Done():
+			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+			return
+		}
 	}
 
 	host, port, err := net.SplitHostPort(r.Host)
@@ -222,12 +355,18 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1. Hijack connection
-	clientConn, err := s.hijackConnection(w)
+	rawClientConn, err := s.hijackConnection(w)
 	if err != nil {
 		logger.Client().Debug("hijack failed", "host", host, "error", err)
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
+	if !s.trackHijackedConn(rawClientConn) {
+		rawClientConn.Close()
+		return
+	}
+	defer s.untrackHijackedConn(rawClientConn)
+	clientConn := rawClientConn
 	// From this point on, we are responsible for closing clientConn.
 	// We delegate closure to the tunnel function or close on error paths.
 
@@ -263,6 +402,7 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	// otherwise the client expects an HTTP/2 SETTINGS frame and receives
 	// HTTP/1.1 text (curl error 16).
 	var remoteConn *tls.Conn
+	var matchedHook tunnelHook
 	// servedCert flips once GetConfigForClient has returned successfully: from
 	// that point our leaf certificate is on the wire to the client. A
 	// handshake abort after this is the client rejecting our cert (pinning),
@@ -270,6 +410,7 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	servedCert := false
 	uid := clientUID(r)
 	src := r.Header.Get("X-Snirect-Src")
+	ticketKeys := s.sessionTicketKeys()
 
 	clientTLS := &tls.Config{
 		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
@@ -282,8 +423,14 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 			// Offer the upstream exactly the protocols the client offered, so
 			// the upstream's choice is necessarily something the client can
 			// also speak. Site hooks may pin their own offer.
-			offer := upstreamALPNOffer(hello.SupportedProtos, host, clientSNI)
-			rc, err := s.connectToRemote(r.Context(), host, port, r.RemoteAddr, targetSNI, offer)
+			matchedHook = tunnelHookFor(host, clientSNI)
+			offer := upstreamOffer(hello.SupportedProtos)
+			if matchedHook != nil {
+				if pinned := matchedHook.pinALPN(); len(pinned) > 0 {
+					offer = pinned
+				}
+			}
+			rc, err := s.connectToRemote(r.Context(), host, port, r.RemoteAddr, clientSNI, targetSNI, offer)
 			if err != nil {
 				return nil, err // connectToRemote already logged (DNS/dial/handshake)
 			}
@@ -317,7 +464,7 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 			// Per-connection config: selects the leaf cert (with SNI fallback
 			// to the CONNECT host) and pins the advertised ALPN to the
 			// upstream's negotiated protocol, guaranteeing both sides match.
-			return &tls.Config{
+			perConnCfg := &tls.Config{
 				GetCertificate: func(h *tls.ClientHelloInfo) (*tls.Certificate, error) {
 					if h.ServerName == "" {
 						h.ServerName = host
@@ -325,15 +472,25 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 					return s.CA.GetCertificate(h)
 				},
 				NextProtos: []string{chosen},
-			}, nil
+			}
+			if len(ticketKeys) > 0 {
+				perConnCfg.SetSessionTicketKeys(ticketKeys)
+			}
+			return perConnCfg, nil
 		},
+	}
+	if len(ticketKeys) > 0 {
+		clientTLS.SetSessionTicketKeys(ticketKeys)
 	}
 
 	// 5. Drive the client-side handshake. The callback above performs the
 	// upstream connect + cert verification; on its failure the handshake
 	// aborts and we clean up any half-opened upstream connection.
 	tlsClientConn := tls.Server(clientConn, clientTLS)
-	if err := tlsClientConn.Handshake(); err != nil {
+	hsCtx, hsCancel := context.WithTimeout(r.Context(), s.dialTimeout())
+	err = tlsClientConn.HandshakeContext(hsCtx)
+	hsCancel()
+	if err != nil {
 		// A pinned client rejects our leaf cert and hangs up (EOF), or the
 		// handshake fails for some other reason (timeout, network noise).
 		// This connection is mid-handshake and cannot be salvaged, so close it.
@@ -359,8 +516,8 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	if clientSNI == "" {
 		clientSNI = host
 	}
-	if hook := tunnelHookFor(host, clientSNI); hook != nil && hook.interceptsH1() {
-		hook.serveH1(s, tlsClientConn, remoteConn, clientSNI, r.RemoteAddr, r.Context())
+	if matchedHook != nil && matchedHook.interceptsH1() {
+		matchedHook.serveH1(s, tlsClientConn, remoteConn, clientSNI, r.RemoteAddr, r.Context())
 		return
 	}
 	s.tunnel(tlsClientConn, remoteConn)
@@ -447,7 +604,7 @@ func (s *ProxyServer) determineSNI(host, clientHelloHost string) string {
 	return targetSNI
 }
 
-func (s *ProxyServer) connectToRemote(ctx context.Context, host, port, clientAddr, targetSNI string, alpnOffer []string) (*tls.Conn, error) {
+func (s *ProxyServer) connectToRemote(ctx context.Context, host, port, clientAddr, clientSNI, targetSNI string, alpnOffer []string) (*tls.Conn, error) {
 	// Resolve IP
 	clientIP, _, _ := net.SplitHostPort(clientAddr)
 	remoteIP, err := s.Resolver.Resolve(ctx, host, net.ParseIP(clientIP))
@@ -459,7 +616,7 @@ func (s *ProxyServer) connectToRemote(ctx context.Context, host, port, clientAdd
 
 	// Dial TCP. dialOutbound routes through the injected outbound dialer when
 	// one is present (mobile), else a default net.Dialer (desktop).
-	timeout := time.Duration(s.Config.Timeout.Dial) * time.Second
+	timeout := s.dialTimeout()
 	netConn, err := s.dialOutbound(ctx, remoteAddr, timeout)
 	if err != nil {
 		s.Resolver.Invalidate(host)
@@ -474,9 +631,16 @@ func (s *ProxyServer) connectToRemote(ctx context.Context, host, port, clientAdd
 		ServerName:         targetSNI,
 		InsecureSkipVerify: true, // We verify manually
 		NextProtos:         alpnOffer,
+		ClientSessionCache: &prefixedSessionCache{
+			prefix: clientSNI + "\x00" + host + "\x00" + remoteAddr + "\x00" + targetSNI + "\x00",
+			inner:  s.clientSessionCache(),
+		},
 	})
 
-	if err := remoteConn.Handshake(); err != nil {
+	hsCtx, hsCancel := context.WithTimeout(ctx, timeout)
+	err = remoteConn.HandshakeContext(hsCtx)
+	hsCancel()
+	if err != nil {
 		netConn.Close()
 		logger.Upstream().Warn("upstream TLS handshake failed", "host", host, "error", err)
 		return nil, fmt.Errorf("remote handshake failed: %w", err)
@@ -508,9 +672,10 @@ func (s *ProxyServer) directTunnel(ctx context.Context, clientConn net.Conn, hos
 	}
 
 	remoteAddr := net.JoinHostPort(remoteIP, port)
-	timeout := time.Duration(s.Config.Timeout.Dial) * time.Second
+	timeout := s.dialTimeout()
 	remoteConn, err := s.dialOutbound(ctx, remoteAddr, timeout)
 	if err != nil {
+		s.Resolver.Invalidate(host)
 		logger.Upstream().Warn("cannot reach upstream", "host", host, "addr", remoteAddr, "error", err)
 		clientConn.Close()
 		return
@@ -523,16 +688,30 @@ func (s *ProxyServer) directTunnel(ctx context.Context, clientConn net.Conn, hos
 // tunnelIdle is how long a tunneled connection may sit with no bytes before
 // we tear it down. Absolute caps used to kill large GitHub/release downloads
 // that still had data flowing.
-const tunnelIdle = 5 * time.Minute
+const (
+	tunnelIdle           = 5 * time.Minute
+	defaultTunnelBufSize = 65536
+)
+
+var tunnelBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, defaultTunnelBufSize)
+		return &b
+	},
+}
 
 // tunnel pipes data between c1 and c2. It closes both connections when done.
 func (s *ProxyServer) tunnel(c1, c2 net.Conn) {
+	s.tunnelWithIdle(c1, c2, tunnelIdle)
+}
+
+func (s *ProxyServer) tunnelWithIdle(c1, c2 net.Conn, idle time.Duration) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	bufSize := s.Config.Server.BufferSize
-	if bufSize <= 0 {
-		bufSize = 65536
+	bufSize := defaultTunnelBufSize
+	if s.Config != nil && s.Config.Server.BufferSize > 0 {
+		bufSize = s.Config.Server.BufferSize
 	}
 	if bufSize < 4096 {
 		bufSize = 4096
@@ -541,17 +720,43 @@ func (s *ProxyServer) tunnel(c1, c2 net.Conn) {
 		bufSize = 1048576
 	}
 
+	refreshInterval := 15 * time.Second
+	if quarter := idle / 4; quarter < refreshInterval {
+		refreshInterval = quarter
+	}
+	if refreshInterval <= 0 {
+		refreshInterval = time.Millisecond
+	}
+
+	var lastActivity atomic.Int64
+	lastActivity.Store(time.Now().UnixNano())
+
 	pipe := func(dst, src net.Conn) {
 		defer wg.Done()
 		defer func() {
 			c1.Close()
 			c2.Close()
 		}()
-		buf := make([]byte, bufSize)
+
+		var buf []byte
+		if bufSize <= defaultTunnelBufSize {
+			bp := tunnelBufPool.Get().(*[]byte)
+			defer tunnelBufPool.Put(bp)
+			buf = (*bp)[:bufSize]
+		} else {
+			buf = make([]byte, bufSize)
+		}
+
+		var lastDeadlineSet time.Time
 		for {
-			_ = src.SetReadDeadline(time.Now().Add(tunnelIdle))
+			now := time.Now()
+			if lastDeadlineSet.IsZero() || now.Sub(lastDeadlineSet) >= refreshInterval {
+				_ = src.SetReadDeadline(now.Add(idle))
+				lastDeadlineSet = now
+			}
 			n, err := src.Read(buf)
 			if n > 0 {
+				lastActivity.Store(time.Now().UnixNano())
 				if _, werr := dst.Write(buf[:n]); werr != nil {
 					if !errors.Is(werr, net.ErrClosed) {
 						logger.Upstream().Debug("tunnel copy error", "error", werr)
@@ -560,6 +765,14 @@ func (s *ProxyServer) tunnel(c1, c2 net.Conn) {
 				}
 			}
 			if err != nil {
+				if isTimeout(err) {
+					last := time.Unix(0, lastActivity.Load())
+					if time.Since(last) < idle {
+						_ = src.SetReadDeadline(last.Add(idle))
+						lastDeadlineSet = time.Now()
+						continue
+					}
+				}
 				if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) && !isTimeout(err) {
 					logger.Upstream().Debug("tunnel copy error", "error", err)
 				}

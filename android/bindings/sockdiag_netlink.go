@@ -39,13 +39,32 @@ const (
 	// nlmsghdr).
 	inetDiagMsgUIDOffset = 16 + 64
 	nlmsgErrno           = unix.NLMSG_ERROR
+	nlmsghdrLen          = 16
+	// inet_diag_req_v2: family/proto/ext/pad (4) + idiag_states (4)
+	// + inet_diag_sockid (48).
+	inetDiagReqV2Len    = 4 + 4 + 48
+	sockDiagReqTotalLen = nlmsghdrLen + inetDiagReqV2Len
 )
 
 var (
-	sockDiagMu     sync.Mutex
-	sockDiagFD     = -1
-	sockDiagBroken atomic.Bool
+	sockDiagMu      sync.Mutex
+	sockDiagFD      = -1
+	sockDiagBroken  atomic.Bool
+	sockDiagReqBuf  [sockDiagReqTotalLen]byte
+	sockDiagRespBuf [1024]byte
+	sockDiagSA      = &unix.SockaddrNetlink{Family: unix.AF_NETLINK}
 )
+
+func isSockDiagFatalErr(err error) bool {
+	return errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES) || errors.Is(err, unix.EOPNOTSUPP)
+}
+
+func latchSockDiagIfFatal(err error) {
+	if isSockDiagFatalErr(err) {
+		sockDiagBroken.Store(true)
+		LogWarn("sockdiag: netlink denied (%v); app attribution disabled, cert-reject events stay anonymous", err)
+	}
+}
 
 // uidOfTCPFlow returns the owning UID of the TCP socket with the given
 // 4-tuple, or 0 when the flow cannot be attributed. src is the app socket's
@@ -71,39 +90,39 @@ func uidOfTCPFlow(srcIP net.IP, srcPort uint16, dstIP net.IP, dstPort uint16) in
 
 	resp, err := sockDiagQuery(family, src, srcPort, dst, dstPort)
 	if err != nil {
-		if errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES) {
-			sockDiagBroken.Store(true)
-			LogWarn("sockdiag: netlink denied (%v); app attribution disabled, cert-reject events stay anonymous", err)
-		}
+		latchSockDiagIfFatal(err)
 		return 0
 	}
-	return parseInetDiagUID(resp, srcPort, dstPort)
+	uid, err := parseInetDiagUID(resp, srcPort, dstPort)
+	if err != nil {
+		latchSockDiagIfFatal(err)
+		return 0
+	}
+	return uid
 }
 
 // sockDiagQuery sends one exact-match SOCK_DIAG_BY_FAMILY request over a
-// (re)created netlink socket and returns the raw first reply. The mutex must
-// be held.
+// (re)created netlink socket and returns a subslice of sockDiagRespBuf. The
+// mutex must be held while the returned slice is read.
 func sockDiagQuery(family uint8, src net.IP, srcPort uint16, dst net.IP, dstPort uint16) ([]byte, error) {
 	fd, err := sockDiagSocketLocked()
 	if err != nil {
 		return nil, err
 	}
-	req := buildInetDiagRequest(family, src, srcPort, dst, dstPort)
-	sa := &unix.SockaddrNetlink{Family: unix.AF_NETLINK}
-	if err := unix.Sendto(fd, req, 0, sa); err != nil {
+	req := buildInetDiagRequestInto(sockDiagReqBuf[:], family, src, srcPort, dst, dstPort)
+	if err := unix.Sendto(fd, req, 0, sockDiagSA); err != nil {
 		// A dead netlink socket self-heals on the next call; drop this one.
 		_ = unix.Close(fd)
 		sockDiagFD = -1
 		return nil, err
 	}
-	buf := make([]byte, 1024)
-	n, _, err := unix.Recvfrom(fd, buf, 0)
+	n, _, err := unix.Recvfrom(fd, sockDiagRespBuf[:], 0)
 	if err != nil {
 		_ = unix.Close(fd)
 		sockDiagFD = -1
 		return nil, err
 	}
-	return buf[:n], nil
+	return sockDiagRespBuf[:n], nil
 }
 
 // sockDiagSocketLocked lazily creates the netlink diag socket with a short
@@ -134,14 +153,13 @@ func sockDiagSocketLocked() (int, error) {
 // 16-byte address slots hold the v4 address in the first 4 bytes (kernel
 // inet_diag_msg_common_fill layout), v6 addresses verbatim.
 func buildInetDiagRequest(family uint8, src net.IP, srcPort uint16, dst net.IP, dstPort uint16) []byte {
-	const (
-		nlmsghdrLen = 16
-		// inet_diag_req_v2: family/proto/ext/pad (4) + idiag_states (4)
-		// + inet_diag_sockid (48).
-		reqLen = 4 + 4 + 48
-	)
-	msg := make([]byte, nlmsghdrLen+reqLen)
-	binary.LittleEndian.PutUint32(msg[0:4], uint32(len(msg)))
+	msg := make([]byte, sockDiagReqTotalLen)
+	return buildInetDiagRequestInto(msg, family, src, srcPort, dst, dstPort)
+}
+
+func buildInetDiagRequestInto(msg []byte, family uint8, src net.IP, srcPort uint16, dst net.IP, dstPort uint16) []byte {
+	msg = msg[:sockDiagReqTotalLen]
+	binary.LittleEndian.PutUint32(msg[0:4], sockDiagReqTotalLen)
 	binary.LittleEndian.PutUint16(msg[4:6], sockDiagType)
 	binary.LittleEndian.PutUint16(msg[6:8], unix.NLM_F_REQUEST)
 	binary.LittleEndian.PutUint32(msg[8:12], 1) // seq
@@ -156,6 +174,7 @@ func buildInetDiagRequest(family uint8, src net.IP, srcPort uint16, dst net.IP, 
 	id := body[8:]
 	binary.BigEndian.PutUint16(id[0:2], srcPort)
 	binary.BigEndian.PutUint16(id[2:4], dstPort)
+	clear(id[4:36])
 	copy(id[4:20], src)
 	copy(id[20:36], dst)
 	// idiag_if = 0, idiag_cookie = INET_DIAG_NOCOOKIE (all ones)
@@ -166,36 +185,49 @@ func buildInetDiagRequest(family uint8, src net.IP, srcPort uint16, dst net.IP, 
 }
 
 // parseInetDiagUID extracts the owning uid from a SOCK_DIAG_BY_FAMILY reply.
-// An NLMSG_ERROR payload means "no such socket" (ENOENT — the app's socket
-// already closed) and yields 0. The ports are verified so a stale or
-// misaddressed reply is never trusted.
-func parseInetDiagUID(resp []byte, srcPort, dstPort uint16) int {
+// An NLMSG_ERROR payload inspects the signed int32 errno: permission or
+// unsupported errors (-EACCES, -EPERM, -EOPNOTSUPP) return that unix.Errno so
+// the caller can latch degraded mode; transient errors like -ENOENT ("no such
+// socket") yield (0, nil). The ports are verified so a stale or misaddressed
+// reply is never trusted.
+func parseInetDiagUID(resp []byte, srcPort, dstPort uint16) (int, error) {
 	if len(resp) < 16 {
-		return 0
+		return 0, nil
 	}
 	nlLen := int(binary.LittleEndian.Uint32(resp[0:4]))
 	nlType := binary.LittleEndian.Uint16(resp[4:6])
 	if nlLen > len(resp) {
-		return 0
+		return 0, nil
 	}
 	switch nlType {
 	case sockDiagType:
 	case nlmsgErrno:
-		return 0 // includes ENOENT: socket closed before the lookup
+		if nlLen < 20 || len(resp) < 20 {
+			return 0, nil
+		}
+		errno := int32(binary.LittleEndian.Uint32(resp[16:20]))
+		if errno < 0 {
+			sysErr := unix.Errno(-errno)
+			switch sysErr {
+			case unix.EACCES, unix.EPERM, unix.EOPNOTSUPP:
+				return 0, sysErr
+			}
+		}
+		return 0, nil // includes ENOENT: socket closed before the lookup
 	default:
-		return 0
+		return 0, nil
 	}
 	msg := resp[:nlLen]
 	if len(msg) < inetDiagMsgUIDOffset+4 {
-		return 0
+		return 0, nil
 	}
 	id := msg[16+4:]
 	if binary.BigEndian.Uint16(id[0:2]) != srcPort || binary.BigEndian.Uint16(id[2:4]) != dstPort {
-		return 0
+		return 0, nil
 	}
 	uid := int(binary.LittleEndian.Uint32(msg[inetDiagMsgUIDOffset : inetDiagMsgUIDOffset+4]))
 	if uid <= 0 {
-		return 0 // kernel/TIME_WAIT entries own no app uid
+		return 0, nil // kernel/TIME_WAIT entries own no app uid
 	}
-	return uid
+	return uid, nil
 }

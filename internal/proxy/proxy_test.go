@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/tls"
@@ -373,7 +374,7 @@ func TestConnectToRemote_DNSFailure(t *testing.T) {
 		Config:   &config.Config{},
 		Resolver: mock,
 	}
-	_, err := ps.connectToRemote(context.Background(), "example.com", "443", "192.168.1.1", "example.com", []string{"http/1.1"})
+	_, err := ps.connectToRemote(context.Background(), "example.com", "443", "192.168.1.1", "example.com", "example.com", []string{"http/1.1"})
 	if err == nil {
 		t.Fatal("expected DNS error")
 	}
@@ -396,7 +397,7 @@ func TestConnectToRemote_DialFailure(t *testing.T) {
 		Resolver: mock,
 	}
 	// Port 9 is typically unused and will cause connection refused.
-	_, err := ps.connectToRemote(context.Background(), "example.com", "9", "192.168.1.1", "example.com", []string{"http/1.1"})
+	_, err := ps.connectToRemote(context.Background(), "example.com", "9", "192.168.1.1", "example.com", "example.com", []string{"http/1.1"})
 	if err == nil {
 		t.Fatal("expected dial failure")
 	}
@@ -434,7 +435,7 @@ func TestConnectToRemote_TLSFailure(t *testing.T) {
 		Resolver: mock,
 	}
 
-	_, err = ps.connectToRemote(context.Background(), "example.com", port, "192.168.1.1", "example.com", []string{"http/1.1"})
+	_, err = ps.connectToRemote(context.Background(), "example.com", port, "192.168.1.1", "example.com", "example.com", []string{"http/1.1"})
 	if err == nil {
 		t.Fatal("expected TLS handshake failure")
 	}
@@ -742,4 +743,439 @@ func TestHandleHTTP_PAC_WithFile(t *testing.T) {
 	if !strings.Contains(rr.Header().Get("Content-Type"), "application/x-ns-proxy-autoconfig") {
 		t.Errorf("Content-Type: got %q, want application/x-ns-proxy-autoconfig", rr.Header().Get("Content-Type"))
 	}
+}
+
+func TestUpstreamTLSResumption_VerifiesAndIsolates(t *testing.T) {
+	now := time.Now()
+	leaf, caCert, pool, err := generateChain(now.Add(24*time.Hour), true, "alpha.example")
+	if err != nil {
+		t.Fatalf("generateChain: %v", err)
+	}
+	// Build a second key/cert so we can construct a tls.Certificate for the upstream listener.
+	caCert2, caPriv2, err := generateCA()
+	if err != nil {
+		t.Fatalf("generateCA: %v", err)
+	}
+	leaf2, leafPriv2, err := generateLeaf(caCert2, caPriv2)
+	if err != nil {
+		t.Fatalf("generateLeaf: %v", err)
+	}
+	_ = leaf
+	_ = caCert
+	_ = pool
+
+	upstreamCert := tls.Certificate{
+		Certificate: [][]byte{leaf2.Raw, caCert2.Raw},
+		PrivateKey:  leafPriv2,
+	}
+	srvCfg := &tls.Config{
+		Certificates: []tls.Certificate{upstreamCert},
+		NextProtos:   []string{"http/1.1"},
+	}
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", srvCfg)
+	if err != nil {
+		t.Fatalf("tls.Listen: %v", err)
+	}
+	defer ln.Close()
+
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				tc := conn.(*tls.Conn)
+				if err := tc.Handshake(); err == nil {
+					_, _ = tc.Write([]byte("ok"))
+				}
+			}(c)
+		}
+	}()
+
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	rls := rules.NewRules()
+	ps := NewProxyServer(&config.Config{
+		Timeout: config.TimeoutConfig{Dial: 5},
+	}, rls, nil, &mockResolver{
+		resolveFunc: func(ctx context.Context, host string, clientIP net.IP) (string, error) {
+			return "127.0.0.1", nil
+		},
+	})
+
+	// 1. First connection to leaf.example.com (full handshake)
+	c1, err := ps.connectToRemote(context.Background(), "leaf.example.com", port, "127.0.0.1:1000", "leaf.example.com", "shared-sni.example", []string{"http/1.1"})
+	if err != nil {
+		t.Fatalf("connect 1: %v", err)
+	}
+	buf := make([]byte, 2)
+	_, _ = io.ReadFull(c1, buf)
+	c1.Close()
+	if c1.ConnectionState().DidResume {
+		t.Fatal("first handshake should not resume")
+	}
+
+	// 2. Second connection to same host + remoteAddr -> must resume, keep PeerCertificates, and still go through verifyConnCert.
+	c2, err := ps.connectToRemote(context.Background(), "leaf.example.com", port, "127.0.0.1:1000", "leaf.example.com", "shared-sni.example", []string{"http/1.1"})
+	if err != nil {
+		t.Fatalf("connect 2: %v", err)
+	}
+	_, _ = io.ReadFull(c2, buf)
+	st2 := c2.ConnectionState()
+	c2.Close()
+	if !st2.DidResume {
+		t.Fatal("second handshake to same host+remoteAddr should resume")
+	}
+	if len(st2.PeerCertificates) == 0 {
+		t.Fatal("resumed session missing PeerCertificates")
+	}
+
+	upstreamPool := x509.NewCertPool()
+	upstreamPool.AddCert(caCert2)
+	strictPolicy := rules.CertPolicy{Enabled: true, Strict: true}
+	if !verifyConnCert(c2, "leaf.example.com", "", strictPolicy, false, upstreamPool) {
+		t.Fatal("resumed session with matching hostname should pass verifyConnCert")
+	}
+	if verifyConnCert(c2, "wrong.example.com", "", strictPolicy, false, upstreamPool) {
+		t.Fatal("resumed session with wrong hostname must still be rejected by verifyConnCert")
+	}
+
+	// 3. Different host sharing identical remoteAddr and targetSNI must NOT reuse leaf.example.com's session.
+	c3, err := ps.connectToRemote(context.Background(), "isolated.example.com", port, "127.0.0.1:1000", "isolated.example.com", "shared-sni.example", []string{"http/1.1"})
+	if err != nil {
+		t.Fatalf("connect 3: %v", err)
+	}
+	_, _ = io.ReadFull(c3, buf)
+	st3 := c3.ConnectionState()
+	c3.Close()
+	if st3.DidResume {
+		t.Fatal("distinct host sharing targetSNI+remoteAddr must not hit cached session")
+	}
+
+	// 4. Transparent/TUN mode (host is bare IP): distinct clientSNI with identical host+remoteAddr+targetSNI must NOT collide.
+	c4, err := ps.connectToRemote(context.Background(), "127.0.0.1", port, "127.0.0.1:1000", "origin-a.example", "", []string{"http/1.1"})
+	if err != nil {
+		t.Fatalf("connect 4: %v", err)
+	}
+	_, _ = io.ReadFull(c4, buf)
+	c4.Close()
+	c5, err := ps.connectToRemote(context.Background(), "127.0.0.1", port, "127.0.0.1:1000", "origin-b.example", "", []string{"http/1.1"})
+	if err != nil {
+		t.Fatalf("connect 5: %v", err)
+	}
+	_, _ = io.ReadFull(c5, buf)
+	st5 := c5.ConnectionState()
+	c5.Close()
+	if st5.DidResume {
+		t.Fatal("distinct clientSNI in transparent mode must not hit cached session")
+	}
+}
+
+func TestClientTLSResumption(t *testing.T) {
+	tmpDir := t.TempDir()
+	certMgr, err := cert.NewCertificateManager(filepath.Join(tmpDir, "root.crt"), filepath.Join(tmpDir, "root.key"))
+	if err != nil {
+		t.Fatalf("NewCertificateManager: %v", err)
+	}
+	defer certMgr.Close()
+
+	sharedRules := rules.NewRules()
+	sharedRules.Hosts["target.example"] = "127.0.0.1"
+	sharedRules.AlterHostname["target.example"] = "target.example"
+
+	cfg := &config.Config{
+		CheckHostname: "off",
+		Server: config.ServerConfig{
+			Address:    "127.0.0.1",
+			Port:       0,
+			BufferSize: 65536,
+		},
+		Timeout: config.TimeoutConfig{Dial: 5},
+	}
+	resolver := dns.NewResolver(cfg, sharedRules)
+	srv := NewProxyServer(cfg, sharedRules, certMgr, resolver)
+	if err := srv.Listen(); err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go srv.Serve()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	})
+
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("OK"))
+	}))
+	defer ts.Close()
+	tsURL, _ := url.Parse(ts.URL)
+	upstreamPort := tsURL.Port()
+
+	clientCache := tls.NewLRUClientSessionCache(16)
+	dialThroughProxy := func() bool {
+		conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.Server.Port))
+		if err != nil {
+			t.Fatalf("dial proxy: %v", err)
+		}
+		defer conn.Close()
+		req := fmt.Sprintf("CONNECT target.example:%s HTTP/1.1\r\nHost: target.example:%s\r\n\r\n", upstreamPort, upstreamPort)
+		if _, err := conn.Write([]byte(req)); err != nil {
+			t.Fatalf("write CONNECT: %v", err)
+		}
+		head := make([]byte, 0, 128)
+		one := make([]byte, 1)
+		for !bytes.HasSuffix(head, []byte("\r\n\r\n")) {
+			if _, err := io.ReadFull(conn, one); err != nil {
+				t.Fatalf("read CONNECT resp: %v", err)
+			}
+			head = append(head, one[0])
+		}
+		tc := tls.Client(conn, &tls.Config{
+			ServerName:         "target.example",
+			InsecureSkipVerify: true,
+			ClientSessionCache: clientCache,
+		})
+		if err := tc.Handshake(); err != nil {
+			t.Fatalf("client handshake: %v", err)
+		}
+		_, _ = tc.Write([]byte("GET / HTTP/1.1\r\nHost: target.example\r\nConnection: close\r\n\r\n"))
+		_, _ = io.ReadAll(tc)
+		return tc.ConnectionState().DidResume
+	}
+
+	if dialThroughProxy() {
+		t.Fatal("first client connection should not resume")
+	}
+	if !dialThroughProxy() {
+		t.Fatal("second client connection should resume via shared SessionTicketKeys")
+	}
+}
+
+func TestTunnel_UnidirectionalActivePastIdle(t *testing.T) {
+	c1Client, c1Proxy := net.Pipe()
+	c2Proxy, c2Server := net.Pipe()
+	defer c1Client.Close()
+	defer c2Server.Close()
+
+	ps := &ProxyServer{
+		Config: &config.Config{
+			Server: config.ServerConfig{BufferSize: 65536},
+		},
+	}
+
+	const idle = 120 * time.Millisecond
+	done := make(chan struct{})
+	go func() {
+		ps.tunnelWithIdle(c1Proxy, c2Proxy, idle)
+		close(done)
+	}()
+
+	// Stream continuously in one direction for ~280ms (> 2x idle) while reverse direction is completely silent.
+	readDone := make(chan int, 1)
+	go func() {
+		buf := make([]byte, 64)
+		total := 0
+		for {
+			n, err := c2Server.Read(buf)
+			total += n
+			if err != nil {
+				readDone <- total
+				return
+			}
+		}
+	}()
+
+	const ticks = 9
+	for i := 0; i < ticks; i++ {
+		if _, err := c1Client.Write([]byte("ping")); err != nil {
+			t.Fatalf("write failed at tick %d (premature idle teardown?): %v", i, err)
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+
+	// Now go silent; tunnel should exit due to idle timeout shortly after ~120ms.
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("tunnel did not exit after both sides went idle")
+	}
+
+	got := <-readDone
+	if got != ticks*4 {
+		t.Fatalf("received %d bytes, want %d", got, ticks*4)
+	}
+}
+
+func TestProxyServer_ShutdownInterruptsHijackedTunnel(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen upstream: %v", err)
+	}
+	defer ln.Close()
+	_, upstreamPort, _ := net.SplitHostPort(ln.Addr().String())
+
+	upstreamAccepted := make(chan net.Conn, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err == nil {
+			upstreamAccepted <- c
+		}
+	}()
+
+	cfg := &config.Config{
+		Server:  config.ServerConfig{Address: "127.0.0.1", Port: 0, BufferSize: 65536},
+		Timeout: config.TimeoutConfig{Dial: 5},
+	}
+	srv := NewProxyServer(cfg, rules.NewRules(), &mockCertificateManager{}, &mockResolver{
+		resolveFunc: func(ctx context.Context, host string, clientIP net.IP) (string, error) {
+			return "127.0.0.1", nil
+		},
+	})
+	if err := srv.Listen(); err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go srv.Serve()
+
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.Server.Port))
+	if err != nil {
+		t.Fatalf("dial proxy: %v", err)
+	}
+	defer conn.Close()
+	req := fmt.Sprintf("CONNECT direct.example:%s HTTP/1.1\r\nHost: direct.example:%s\r\n\r\n", upstreamPort, upstreamPort)
+	if _, err := conn.Write([]byte(req)); err != nil {
+		t.Fatalf("write CONNECT: %v", err)
+	}
+	head := make([]byte, 0, 64)
+	one := make([]byte, 1)
+	for !bytes.HasSuffix(head, []byte("\r\n\r\n")) {
+		if _, err := io.ReadFull(conn, one); err != nil {
+			t.Fatalf("read CONNECT resp: %v", err)
+		}
+		head = append(head, one[0])
+	}
+
+	up := <-upstreamAccepted
+	defer up.Close()
+
+	// Shutdown must close active hijacked tunnel and return promptly.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := conn.Read(one); err == nil {
+		t.Fatal("expected hijacked client connection to be closed by Shutdown")
+	}
+}
+
+func TestDirectTunnel_InvalidatesDNSOnDialFailure(t *testing.T) {
+	var invalidated string
+	mock := &mockResolver{
+		resolveFunc: func(ctx context.Context, host string, clientIP net.IP) (string, error) {
+			return "127.0.0.1", nil
+		},
+		invalidateFunc: func(host string) {
+			invalidated = host
+		},
+	}
+	ps := NewProxyServer(&config.Config{
+		Timeout: config.TimeoutConfig{Dial: 1},
+	}, rules.NewRules(), nil, mock)
+	c1, c2 := net.Pipe()
+	defer c2.Close()
+
+	ps.directTunnel(context.Background(), c1, "bad.example", "9")
+	if invalidated != "bad.example" {
+		t.Fatalf("expected DNS invalidation for bad.example, got %q", invalidated)
+	}
+}
+
+func TestShutdownWhileSemaphoreSaturated(t *testing.T) {
+	upLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("upstream listen: %v", err)
+	}
+	defer upLn.Close()
+	go func() {
+		for {
+			c, err := upLn.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				_, _ = io.Copy(io.Discard, conn)
+			}(c)
+		}
+	}()
+
+	srv := NewProxyServer(&config.Config{
+		Timeout: config.TimeoutConfig{Dial: 2},
+	}, rules.NewRules(), nil, &mockResolver{
+		resolveFunc: func(ctx context.Context, host string, clientIP net.IP) (string, error) {
+			return "127.0.0.1", nil
+		},
+	})
+	srv.semaphore = make(chan struct{}, 1)
+	srv.server = &http.Server{Handler: srv}
+
+	proxyLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("proxy listen: %v", err)
+	}
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- srv.server.Serve(proxyLn)
+	}()
+
+	// 1. Saturate MaxConns=1 with an active CONNECT tunnel.
+	c1, err := net.Dial("tcp", proxyLn.Addr().String())
+	if err != nil {
+		t.Fatalf("dial 1: %v", err)
+	}
+	defer c1.Close()
+	_, _ = fmt.Fprintf(c1, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", upLn.Addr().String(), upLn.Addr().String())
+	br1 := bufio.NewReader(c1)
+	line1, err := br1.ReadString('\n')
+	if err != nil || !strings.Contains(line1, "200") {
+		t.Fatalf("connect 1 expected 200, got %q (err=%v)", line1, err)
+	}
+	for {
+		l, err := br1.ReadString('\n')
+		if err != nil || l == "\r\n" {
+			break
+		}
+	}
+
+	// 2. Second CONNECT blocks on semaphore; cancelling its context must return 503 cleanly.
+	reqCtx, reqCancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(reqCtx, http.MethodConnect, "http://"+upLn.Addr().String(), nil)
+	req.Host = upLn.Addr().String()
+	rec := httptest.NewRecorder()
+	done2 := make(chan struct{})
+	go func() {
+		srv.ServeHTTP(rec, req)
+		close(done2)
+	}()
+	time.Sleep(20 * time.Millisecond)
+	reqCancel()
+	select {
+	case <-done2:
+	case <-time.After(time.Second):
+		t.Fatal("blocked handleConnect did not abort on request context cancellation")
+	}
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 on cancelled semaphore wait, got %d", rec.Code)
+	}
+
+	// 3. Shutdown must close hijacked tunnel first and return without deadlocking.
+	sdCtx, sdCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer sdCancel()
+	if err := srv.Shutdown(sdCtx); err != nil {
+		t.Fatalf("Shutdown deadlocked or failed: %v", err)
+	}
+	<-serveErr
 }

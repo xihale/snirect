@@ -412,3 +412,88 @@ func TestSignLeafCert_Concurrent(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestCertManager_Singleflight(t *testing.T) {
+	tmpDir := t.TempDir()
+	cm, err := NewCertificateManager(tmpDir+"/root.crt", tmpDir+"/root.key")
+	if err != nil {
+		t.Fatalf("NewCertificateManager failed: %v", err)
+	}
+	defer cm.Close()
+
+	const workers = 16
+	certs := make([]*tls.Certificate, workers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			<-start
+			name := "sf.example.com"
+			if idx%2 == 1 {
+				name = "SF.EXAMPLE.COM."
+			}
+			c, err := cm.GetCertificate(&tls.ClientHelloInfo{ServerName: name})
+			if err != nil {
+				t.Errorf("GetCertificate: %v", err)
+				return
+			}
+			certs[idx] = c
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i := 1; i < workers; i++ {
+		if certs[i] == nil || certs[i] != certs[0] {
+			t.Fatalf("worker %d got distinct cert pointer (%p != %p); expected singleflight coalescing", i, certs[i], certs[0])
+		}
+	}
+}
+
+func TestCertManager_CacheCapAndPrune(t *testing.T) {
+	tmpDir := t.TempDir()
+	cm, err := NewCertificateManager(tmpDir+"/root.crt", tmpDir+"/root.key")
+	if err != nil {
+		t.Fatalf("NewCertificateManager failed: %v", err)
+	}
+	defer cm.Close()
+	cm.maxCacheSize = 4
+
+	hosts := []string{"a.example", "b.example", "c.example", "d.example", "e.example", "f.example"}
+	for _, h := range hosts {
+		if _, err := cm.GetCertificate(&tls.ClientHelloInfo{ServerName: h}); err != nil {
+			t.Fatalf("GetCertificate(%s): %v", h, err)
+		}
+	}
+
+	if _, ok := cm.certCache.Load("a.example"); ok {
+		t.Error("oldest entry a.example should have been evicted")
+	}
+	if _, ok := cm.certCache.Load("b.example"); ok {
+		t.Error("second oldest entry b.example should have been evicted")
+	}
+	for _, h := range hosts[2:] {
+		if _, ok := cm.certCache.Load(h); !ok {
+			t.Errorf("expected %s to remain cached", h)
+		}
+	}
+
+	// Verify pruneExpired removes entries past Leaf.NotAfter without re-parsing DER.
+	if v, ok := cm.certCache.Load("c.example"); ok {
+		orig := v.(*tls.Certificate)
+		expiredCopy := *orig
+		leafCopy := *orig.Leaf
+		leafCopy.NotAfter = time.Now().Add(-time.Minute)
+		expiredCopy.Leaf = &leafCopy
+		cm.certCache.Store("c.example", &expiredCopy)
+	}
+	cm.pruneExpired(time.Now())
+	if _, ok := cm.certCache.Load("c.example"); ok {
+		t.Error("c.example should have been pruned by pruneExpired")
+	}
+	if _, ok := cm.certCache.Load("d.example"); !ok {
+		t.Error("valid entry d.example should not be pruned")
+	}
+}

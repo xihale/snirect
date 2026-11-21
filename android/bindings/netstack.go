@@ -109,7 +109,7 @@ func newNetstackBridge(f tunFile, localPort int, mtu int, cfg *coreconfig.Config
 
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol4, icmp.NewProtocol6},
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocolCUBIC, udp.NewProtocol, icmp.NewProtocol4, icmp.NewProtocol6},
 	})
 
 	ep := channel.New(1024, uint32(mtu), "")
@@ -173,8 +173,12 @@ func (b *netstackBridge) installForwarders() {
 		// dialed); RemoteAddress/RemotePort are the app socket's TUN-side
 		// address:port — the source tuple needed for uid attribution.
 		id := r.ID()
-		dst := net.JoinHostPort(id.LocalAddress.String(), strconv.Itoa(int(id.LocalPort)))
-		src := net.JoinHostPort(id.RemoteAddress.String(), strconv.Itoa(int(id.RemotePort)))
+		flow := flowTuple{
+			srcIP:   tcpipAddrToIP(id.RemoteAddress),
+			dstIP:   tcpipAddrToIP(id.LocalAddress),
+			srcPort: id.RemotePort,
+			dstPort: id.LocalPort,
+		}
 
 		var wq waiter.Queue
 		tep, err := r.CreateEndpoint(&wq)
@@ -183,9 +187,10 @@ func (b *netstackBridge) installForwarders() {
 			return
 		}
 		tep.SocketOptions().SetKeepAlive(true)
+		tep.SocketOptions().SetDelayOption(false) // disable Nagle (TCP_NODELAY)
 		r.Complete(false)
 		conn := gonet.NewTCPConn(&wq, tep)
-		go b.relayToProxy(conn, dst, src)
+		go b.relayToProxy(conn, flow)
 	})
 	b.stk.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpFwd.HandlePacket)
 
@@ -210,6 +215,46 @@ func (b *netstackBridge) installForwarders() {
 	b.stk.SetTransportProtocolHandler(udp.ProtocolNumber, udpFwd.HandlePacket)
 }
 
+type flowTuple struct {
+	srcIP   net.IP
+	dstIP   net.IP
+	srcPort uint16
+	dstPort uint16
+}
+
+func tcpipAddrToIP(addr tcpip.Address) net.IP {
+	switch addr.Len() {
+	case 4:
+		a := addr.As4()
+		return net.IP(a[:])
+	case 16:
+		a := addr.As16()
+		return net.IP(a[:])
+	default:
+		return nil
+	}
+}
+
+var (
+	relayBufPool = sync.Pool{
+		New: func() any {
+			buf := make([]byte, 64*1024)
+			return &buf
+		},
+	}
+	dnsBufPool = sync.Pool{
+		New: func() any {
+			buf := make([]byte, 2048)
+			return &buf
+		},
+	}
+	connectReaderPool = sync.Pool{
+		New: func() any {
+			return bufio.NewReaderSize(nil, 1024)
+		},
+	}
+)
+
 // relayToProxy pipes a TUN-terminated TCP flow to the local proxy listener and
 // back. The flow is opened with a synthesized CONNECT for dst ("ip:port" — the
 // original destination the captured app dialed), so the proxy's handleConnect
@@ -220,7 +265,7 @@ func (b *netstackBridge) installForwarders() {
 // the kernel is asked who owns that socket (inet_diag, see sockdiag): when
 // resolvable, the uid rides along in an X-Snirect-Uid header so the proxy can
 // attribute a client-side certificate rejection (pinning) back to the app.
-func (b *netstackBridge) relayToProxy(client net.Conn, dst, src string) {
+func (b *netstackBridge) relayToProxy(client net.Conn, flow flowTuple) {
 	defer client.Close()
 	proxyAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(b.localPort))
 	upstream, err := b.proxyDialer.Dial("tcp", proxyAddr)
@@ -230,6 +275,9 @@ func (b *netstackBridge) relayToProxy(client net.Conn, dst, src string) {
 	}
 	defer upstream.Close()
 
+	dst := net.JoinHostPort(flow.dstIP.String(), strconv.Itoa(int(flow.dstPort)))
+	src := net.JoinHostPort(flow.srcIP.String(), strconv.Itoa(int(flow.srcPort)))
+
 	// Synthesize the proxy handshake (audit B1). Without this the proxy's
 	// http.Server would parse the app's TLS ClientHello as a request line and
 	// reject the flow; with it, the flow enters handleConnect like any
@@ -238,16 +286,24 @@ func (b *netstackBridge) relayToProxy(client net.Conn, dst, src string) {
 	// consumer of the uid); X-Snirect-Src always carries the flow's source
 	// tuple so the host can retry attribution at certificate-rejection time,
 	// when the socket was certainly established.
-	req := "CONNECT " + dst + " HTTP/1.1\r\nHost: " + dst + "\r\n"
-	req += "X-Snirect-Src: " + src + "\r\n"
-	_, dPort, _ := net.SplitHostPort(dst)
-	if dPort == "443" {
-		if uid := uidOfFlow(src, dst); uid > 0 {
-			req += "X-Snirect-Uid: " + strconv.Itoa(uid) + "\r\n"
+	var reqBuf [256]byte
+	req := reqBuf[:0]
+	req = append(req, "CONNECT "...)
+	req = append(req, dst...)
+	req = append(req, " HTTP/1.1\r\nHost: "...)
+	req = append(req, dst...)
+	req = append(req, "\r\nX-Snirect-Src: "...)
+	req = append(req, src...)
+	req = append(req, "\r\n"...)
+	if flow.dstPort == 443 {
+		if uid := uidOfFlow(flow); uid > 0 {
+			req = append(req, "X-Snirect-Uid: "...)
+			req = strconv.AppendInt(req, int64(uid), 10)
+			req = append(req, "\r\n"...)
 		}
 	}
-	req += "\r\n"
-	if _, err := upstream.Write([]byte(req)); err != nil {
+	req = append(req, "\r\n"...)
+	if _, err := upstream.Write(req); err != nil {
 		LogWarn("netstack: send CONNECT %s failed: %v", dst, err)
 		return
 	}
@@ -255,13 +311,18 @@ func (b *netstackBridge) relayToProxy(client net.Conn, dst, src string) {
 	// Read the proxy's response through a bufio.Reader so any bytes it
 	// buffered past the response headers (e.g. the first server flight of a
 	// TLS handshake) are preserved for the relay below.
-	br := bufio.NewReader(upstream)
+	br := connectReaderPool.Get().(*bufio.Reader)
+	br.Reset(upstream)
 	statusLine, err := br.ReadString('\n')
 	if err != nil {
+		br.Reset(nil)
+		connectReaderPool.Put(br)
 		LogWarn("netstack: read CONNECT %s response failed: %v", dst, err)
 		return
 	}
 	if !strings.HasPrefix(statusLine, "HTTP/1.1 200") && !strings.HasPrefix(statusLine, "HTTP/1.0 200") {
+		br.Reset(nil)
+		connectReaderPool.Put(br)
 		LogWarn("netstack: proxy refused CONNECT %s: %s", dst, strings.TrimSpace(statusLine))
 		return
 	}
@@ -269,6 +330,8 @@ func (b *netstackBridge) relayToProxy(client net.Conn, dst, src string) {
 	for {
 		line, err := br.ReadString('\n')
 		if err != nil {
+			br.Reset(nil)
+			connectReaderPool.Put(br)
 			LogWarn("netstack: truncated CONNECT %s response headers: %v", dst, err)
 			return
 		}
@@ -278,27 +341,72 @@ func (b *netstackBridge) relayToProxy(client net.Conn, dst, src string) {
 	}
 
 	LogDebug("netstack: CONNECT %s established", dst)
+	if br.Buffered() == 0 {
+		br.Reset(nil)
+		connectReaderPool.Put(br)
+		br = nil
+	}
 	pipe(client, br, upstream, dst)
 }
 
+func drainBuffered(dst io.Writer, br *bufio.Reader) (int64, error) {
+	if br == nil {
+		return 0, nil
+	}
+	buffered := br.Buffered()
+	if buffered <= 0 {
+		return 0, nil
+	}
+	peeked, err := br.Peek(buffered)
+	if err != nil && len(peeked) == 0 {
+		return 0, err
+	}
+	if len(peeked) == 0 {
+		return 0, nil
+	}
+	n, werr := dst.Write(peeked)
+	if n > 0 {
+		_, _ = br.Discard(n)
+	}
+	return int64(n), werr
+}
+
 // pipe is a bidirectional byte copy between the TUN-side conn and the proxy
-// upstream. It reads the proxy→client direction from proxySrc (the bufio.Reader
-// wrapping upstream, preserving its over-read past the CONNECT response) and
-// writes the client→proxy direction straight to proxyDst. Returns when either
+// upstream. If br has over-read bytes buffered past the CONNECT response, they
+// are drained once before copying directly from upstream using pooled 64 KiB
+// buffers (avoiding bufio.Reader.WriteTo's 4 KiB chunks). Returns when either
 // direction finishes; the deferred Closes in relayToProxy then tear both ends.
 // label names the flow in per-direction byte-count logs (debug level).
-func pipe(client net.Conn, proxySrc io.Reader, proxyDst io.Writer, label string) {
+func pipe(client net.Conn, br *bufio.Reader, upstream net.Conn, label string) {
 	done := make(chan struct{}, 2)
-	cp := func(dir string, dst io.Writer, src io.Reader) {
-		n, _ := io.Copy(dst, src)
-		LogDebug("netstack: %s: %s direction ended after %d bytes", label, dir, n)
-		if cw, ok := dst.(interface{ CloseWrite() error }); ok {
+	go func() {
+		bufPtr := relayBufPool.Get().(*[]byte)
+		defer relayBufPool.Put(bufPtr)
+
+		var total int64
+		drained, err := drainBuffered(client, br)
+		total += drained
+		if err == nil {
+			n, _ := io.CopyBuffer(client, upstream, *bufPtr)
+			total += n
+		}
+		LogDebug("netstack: %s: proxy->client direction ended after %d bytes", label, total)
+		if cw, ok := client.(interface{ CloseWrite() error }); ok {
 			_ = cw.CloseWrite()
 		}
 		done <- struct{}{}
-	}
-	go cp("proxy->client", client, proxySrc)
-	go cp("client->proxy", proxyDst, client)
+	}()
+	go func() {
+		bufPtr := relayBufPool.Get().(*[]byte)
+		defer relayBufPool.Put(bufPtr)
+
+		n, _ := io.CopyBuffer(upstream, client, *bufPtr)
+		LogDebug("netstack: %s: client->proxy direction ended after %d bytes", label, n)
+		if cw, ok := upstream.(interface{ CloseWrite() error }); ok {
+			_ = cw.CloseWrite()
+		}
+		done <- struct{}{}
+	}()
 	<-done
 }
 
@@ -322,13 +430,16 @@ func (b *netstackBridge) handleDNS(conn net.Conn) {
 	}
 
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	buf := make([]byte, 2048)
-	n, err := conn.Read(buf)
+	bufPtr := dnsBufPool.Get().(*[]byte)
+	n, err := conn.Read(*bufPtr)
 	if err != nil {
+		dnsBufPool.Put(bufPtr)
 		return
 	}
 	msg := new(dns.Msg)
-	if err := msg.Unpack(buf[:n]); err != nil {
+	unpackErr := msg.Unpack((*bufPtr)[:n])
+	dnsBufPool.Put(bufPtr)
+	if unpackErr != nil {
 		servfail(msg)
 		return
 	}
@@ -351,13 +462,21 @@ func (b *netstackBridge) handleDNS(conn net.Conn) {
 
 	// Host override: a rules.GetHost hit short-circuits to the rule's IP.
 	if b.rules != nil && len(msg.Question) > 0 {
-		qName := dns.Fqdn(msg.Question[0].Name)
-		if ip, ok := b.rules.GetHost(qName); ok && net.ParseIP(ip) != nil {
-			if msg.Question[0].Qtype == dns.TypeA {
+		qName := strings.TrimSuffix(msg.Question[0].Name, ".")
+		if ipStr, ok := b.rules.GetHost(qName); ok {
+			if ip := net.ParseIP(ipStr); ip != nil && msg.Question[0].Qtype == dns.TypeA {
 				reply := new(dns.Msg)
 				reply.SetReply(msg)
-				if rr, err := dns.NewRR(fmt.Sprintf("%s 60 IN A %s", msg.Question[0].Name, ip)); err == nil {
-					reply.Answer = append(reply.Answer, rr)
+				if ip4 := ip.To4(); ip4 != nil {
+					reply.Answer = []dns.RR{&dns.A{
+						Hdr: dns.RR_Header{
+							Name:   msg.Question[0].Name,
+							Rrtype: dns.TypeA,
+							Class:  dns.ClassINET,
+							Ttl:    60,
+						},
+						A: ip4,
+					}}
 				}
 				writeDNS(conn, reply)
 				return
@@ -405,7 +524,9 @@ func qnameOf(msg *dns.Msg) string {
 }
 
 func writeDNS(conn net.Conn, msg *dns.Msg) {
-	data, err := msg.Pack()
+	bufPtr := dnsBufPool.Get().(*[]byte)
+	defer dnsBufPool.Put(bufPtr)
+	data, err := msg.PackBuffer(*bufPtr)
 	if err != nil {
 		return
 	}
@@ -481,10 +602,31 @@ func (b *netstackBridge) readLoop() {
 	}
 }
 
+func packetBytes(pkt *stack.PacketBuffer, scratch []byte) ([]byte, []byte) {
+	slices := pkt.AsSlices()
+	if len(slices) == 0 {
+		return nil, scratch
+	}
+	if len(slices) == 1 {
+		return slices[0], scratch
+	}
+	n := 0
+	for _, s := range slices {
+		if n+len(s) > len(scratch) {
+			grown := make([]byte, n+len(s))
+			copy(grown, scratch[:n])
+			scratch = grown
+		}
+		n += copy(scratch[n:], s)
+	}
+	return scratch[:n], scratch
+}
+
 // writeLoop emits gVisor's outbound packets back to the TUN file.
 func (b *netstackBridge) writeLoop() {
 	defer b.Close()
 	ctx := context.Background()
+	scratch := make([]byte, 65536+14)
 	for {
 		pkt := b.ep.ReadContext(ctx)
 		if pkt == nil {
@@ -493,19 +635,24 @@ func (b *netstackBridge) writeLoop() {
 			}
 			continue
 		}
-		data := pkt.ToView().AsSlice()
-		pkt.DecRef()
+		var data []byte
+		data, scratch = packetBytes(pkt, scratch)
+		var writeErr error
 		if len(data) > 0 {
-			if _, err := b.f.Write(data); err != nil {
-				if b.isClosed() {
-					LogDebug("netstack: tun write ended: %v", err)
-					return
-				}
-				// E.g. an oversized packet against a smaller VpnService MTU
-				// (audit B3): every subsequent write would fail too.
-				b.fatal("tun write failed: %v", err)
+			_, writeErr = b.f.Write(data)
+		}
+		// DecRef MUST happen after b.f.Write completes because single-slice
+		// packets alias pkt's backing memory directly.
+		pkt.DecRef()
+		if writeErr != nil {
+			if b.isClosed() {
+				LogDebug("netstack: tun write ended: %v", writeErr)
 				return
 			}
+			// E.g. an oversized packet against a smaller VpnService MTU
+			// (audit B3): every subsequent write would fail too.
+			b.fatal("tun write failed: %v", writeErr)
+			return
 		}
 	}
 }

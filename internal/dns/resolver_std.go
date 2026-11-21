@@ -1,21 +1,22 @@
 package dns
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-
-	"github.com/xihale/snirect/internal/config"
-	"github.com/xihale/snirect/internal/logger"
-	"github.com/xihale/snirect/internal/rules"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/xihale/snirect/internal/config"
+	"github.com/xihale/snirect/internal/logger"
+	"github.com/xihale/snirect/internal/rules"
+	"golang.org/x/sync/singleflight"
 )
 
 type stdBackend struct {
@@ -28,17 +29,31 @@ type stdUpstream interface {
 	Address() string
 }
 
+type stdContextUpstream interface {
+	ExchangeContext(ctx context.Context, m *dns.Msg) (*dns.Msg, error)
+}
+
+func exchangeUpstream(ctx context.Context, u stdUpstream, m *dns.Msg) (*dns.Msg, error) {
+	if cu, ok := u.(stdContextUpstream); ok {
+		return cu.ExchangeContext(ctx, m)
+	}
+	return u.Exchange(m)
+}
+
 // exchangeParallel sends the same DNS query to multiple upstreams concurrently.
 // It returns the first successful reply, or the last error if all upstreams fail.
 // The caller provides a context for cancellation and timeout control.
 func exchangeParallel(ctx context.Context, m *dns.Msg, upstreams []stdUpstream) (*dns.Msg, string, error) {
 	if len(upstreams) == 1 {
-		reply, err := upstreams[0].Exchange(m)
+		reply, err := exchangeUpstream(ctx, upstreams[0], m)
 		if err != nil {
 			return nil, "", err
 		}
 		return reply, upstreams[0].Address(), nil
 	}
+
+	raceCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	type result struct {
 		reply *dns.Msg
@@ -53,10 +68,10 @@ func exchangeParallel(ctx context.Context, m *dns.Msg, upstreams []stdUpstream) 
 	for _, u := range upstreams {
 		go func(u stdUpstream) {
 			defer wg.Done()
-			reply, err := u.Exchange(m)
+			reply, err := exchangeUpstream(raceCtx, u, m)
 			select {
 			case resCh <- result{reply: reply, addr: u.Address(), err: err}:
-			case <-ctx.Done():
+			case <-raceCtx.Done():
 				// Context cancelled before we could send, skip this result
 			}
 		}(u)
@@ -100,12 +115,29 @@ func exchangeParallel(ctx context.Context, m *dns.Msg, upstreams []stdUpstream) 
 func (b *stdBackend) Exchange(m *dns.Msg) (*dns.Msg, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
+	return b.ExchangeContext(ctx, m)
+}
 
+func (b *stdBackend) ExchangeContext(ctx context.Context, m *dns.Msg) (*dns.Msg, string, error) {
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline && b.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, b.timeout)
+		defer cancel()
+	}
 	reply, addr, err := exchangeParallel(ctx, m, b.upstreams)
 	if err != nil {
 		return nil, "", err
 	}
 	return reply, addr, nil
+}
+
+func (b *stdBackend) Close() error {
+	for _, u := range b.upstreams {
+		if c, ok := u.(io.Closer); ok {
+			_ = c.Close()
+		}
+	}
+	return nil
 }
 
 // nameResolver maps a hostname to an IP literal using bootstrap DNS.
@@ -163,6 +195,7 @@ func newBootstrapResolver(servers []string, timeout time.Duration, dialer *net.D
 
 	backend := &stdBackend{upstreams: upstreams, timeout: timeout}
 	var mu sync.Mutex
+	var sf singleflight.Group
 	type cached struct {
 		ip      string
 		expires time.Time
@@ -182,32 +215,47 @@ func newBootstrapResolver(servers []string, timeout time.Duration, dialer *net.D
 		}
 		mu.Unlock()
 
-		m := new(dns.Msg)
-		m.SetQuestion(dns.Fqdn(host), dns.TypeA)
-		reply, addr, err := backend.Exchange(m)
-		if err != nil {
-			return "", fmt.Errorf("bootstrap resolve %s: %w", host, err)
-		}
-		var ip string
-		ttl := uint32(300)
-		for _, ans := range reply.Answer {
-			if a, ok := ans.(*dns.A); ok {
-				ip = a.A.String()
-				ttl = a.Hdr.Ttl
-				break
+		v, err, _ := sf.Do(host, func() (any, error) {
+			now := time.Now()
+			mu.Lock()
+			if e, ok := cache[host]; ok && now.Before(e.expires) {
+				ip := e.ip
+				mu.Unlock()
+				return ip, nil
 			}
+			mu.Unlock()
+
+			m := new(dns.Msg)
+			m.SetQuestion(dns.Fqdn(host), dns.TypeA)
+			reply, addr, err := backend.Exchange(m)
+			if err != nil {
+				return nil, fmt.Errorf("bootstrap resolve %s: %w", host, err)
+			}
+			var ip string
+			ttl := uint32(300)
+			for _, ans := range reply.Answer {
+				if a, ok := ans.(*dns.A); ok {
+					ip = a.A.String()
+					ttl = a.Hdr.Ttl
+					break
+				}
+			}
+			if ip == "" {
+				return nil, fmt.Errorf("bootstrap resolve %s: no A record from %s", host, addr)
+			}
+			if ttl == 0 {
+				ttl = 60
+			}
+			mu.Lock()
+			cache[host] = cached{ip: ip, expires: time.Now().Add(time.Duration(ttl) * time.Second)}
+			mu.Unlock()
+			logger.DNS().Debug("dns bootstrap resolved", "host", host, "ip", ip, "via", addr)
+			return ip, nil
+		})
+		if err != nil {
+			return "", err
 		}
-		if ip == "" {
-			return "", fmt.Errorf("bootstrap resolve %s: no A record from %s", host, addr)
-		}
-		if ttl == 0 {
-			ttl = 60
-		}
-		mu.Lock()
-		cache[host] = cached{ip: ip, expires: now.Add(time.Duration(ttl) * time.Second)}
-		mu.Unlock()
-		logger.DNS().Debug("dns bootstrap resolved", "host", host, "ip", ip, "via", addr)
-		return ip, nil
+		return v.(string), nil
 	}
 }
 
@@ -312,17 +360,142 @@ func dialResolved(ctx context.Context, network, address string, dialer *net.Dial
 	return d.DialContext(ctx, network, address)
 }
 
+const (
+	maxDNSConnPoolSize    = 8
+	defaultDNSConnIdleTTL = 15 * time.Second
+)
+
+type pooledDNSConn struct {
+	conn     *dns.Conn
+	addr     string
+	lastUsed time.Time
+}
+
 type dnsUpstream struct {
-	addr    string
-	network string
-	timeout time.Duration
-	dialer  *net.Dialer // Optional custom dialer (e.g., for VPN socket protection)
-	resolve nameResolver
-	tlsName string // SNI when addr has been rewritten to an IP
+	addr        string
+	network     string
+	timeout     time.Duration
+	dialer      *net.Dialer // Optional custom dialer (e.g., for VPN socket protection)
+	resolve     nameResolver
+	tlsName     string        // SNI when addr has been rewritten to an IP
+	tlsConfig   *tls.Config   // Optional base TLS config (used by tests for custom RootCAs)
+	poolIdleTTL time.Duration // Optional override for testing; defaults to defaultDNSConnIdleTTL
+
+	tlsInitOnce sync.Once
+	baseTLS     *tls.Config
+
+	poolMu sync.Mutex
+	closed bool
+	pool   []pooledDNSConn
 }
 
 func (u *dnsUpstream) Address() string { return u.addr }
+
+func (u *dnsUpstream) idleTTL() time.Duration {
+	if u.poolIdleTTL > 0 {
+		return u.poolIdleTTL
+	}
+	return defaultDNSConnIdleTTL
+}
+
+func (u *dnsUpstream) ensureTLSConfig(serverName string) *tls.Config {
+	u.tlsInitOnce.Do(func() {
+		sessCache := tls.NewLRUClientSessionCache(64)
+		if u.tlsConfig != nil {
+			cfg := u.tlsConfig.Clone()
+			if cfg.ServerName == "" && serverName != "" {
+				cfg.ServerName = serverName
+			}
+			if cfg.ClientSessionCache == nil {
+				cfg.ClientSessionCache = sessCache
+			}
+			u.baseTLS = cfg
+			return
+		}
+		u.baseTLS = &tls.Config{
+			InsecureSkipVerify: false,
+			ServerName:         serverName,
+			ClientSessionCache: sessCache,
+		}
+	})
+	return u.baseTLS
+}
+
+func (u *dnsUpstream) getPooledConn(addr string) (*dns.Conn, bool) {
+	now := time.Now()
+	ttl := u.idleTTL()
+	var stale []*dns.Conn
+	var found *dns.Conn
+
+	u.poolMu.Lock()
+	for len(u.pool) > 0 {
+		idx := len(u.pool) - 1
+		pc := u.pool[idx]
+		u.pool[idx] = pooledDNSConn{}
+		u.pool = u.pool[:idx]
+
+		if pc.addr == addr && now.Sub(pc.lastUsed) <= ttl {
+			found = pc.conn
+			break
+		}
+		stale = append(stale, pc.conn)
+	}
+	u.poolMu.Unlock()
+
+	for _, c := range stale {
+		_ = c.Close()
+	}
+	return found, found != nil
+}
+
+func (u *dnsUpstream) putPooledConn(addr string, conn *dns.Conn) {
+	if conn == nil {
+		return
+	}
+	u.poolMu.Lock()
+	if !u.closed && len(u.pool) < maxDNSConnPoolSize {
+		u.pool = append(u.pool, pooledDNSConn{
+			conn:     conn,
+			addr:     addr,
+			lastUsed: time.Now(),
+		})
+		u.poolMu.Unlock()
+		return
+	}
+	u.poolMu.Unlock()
+	_ = conn.Close()
+}
+
+func (u *dnsUpstream) Close() error {
+	u.poolMu.Lock()
+	u.closed = true
+	conns := u.pool
+	u.pool = nil
+	u.poolMu.Unlock()
+
+	for _, pc := range conns {
+		if pc.conn != nil {
+			_ = pc.conn.Close()
+		}
+	}
+	return nil
+}
+
 func (u *dnsUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
+	timeout := u.timeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return u.ExchangeContext(ctx, m)
+}
+
+func (u *dnsUpstream) ExchangeContext(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	addr := u.addr
 	serverName := u.tlsName
 	if u.resolve != nil {
@@ -338,6 +511,7 @@ func (u *dnsUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
 			}
 		}
 	}
+
 	client := &dns.Client{
 		Net:     u.network,
 		Timeout: u.timeout,
@@ -346,31 +520,85 @@ func (u *dnsUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		client.Dialer = u.dialer
 	}
 	if u.network == "tcp-tls" {
-		client.TLSConfig = &tls.Config{InsecureSkipVerify: false, ServerName: serverName}
+		client.TLSConfig = u.ensureTLSConfig(serverName)
 	}
-	reply, _, err := client.Exchange(m, addr)
-	return reply, err
+
+	if u.network != "tcp" && u.network != "tcp-tls" {
+		reply, _, err := client.ExchangeContext(ctx, m, addr)
+		return reply, err
+	}
+
+	conn, reused := u.getPooledConn(addr)
+	if conn == nil {
+		var err error
+		conn, err = client.DialContext(ctx, addr)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	reply, _, err := client.ExchangeWithConnContext(ctx, m, conn)
+	if err == nil {
+		u.putPooledConn(addr, conn)
+		return reply, nil
+	}
+
+	// Never return an errored connection to the pool (wire framing may be desynchronized).
+	_ = conn.Close()
+
+	// Retry once only when a reused pooled connection failed and caller context is still valid.
+	if reused && ctx.Err() == nil {
+		freshConn, dialErr := client.DialContext(ctx, addr)
+		if dialErr != nil {
+			return nil, dialErr
+		}
+		reply, _, err = client.ExchangeWithConnContext(ctx, m, freshConn)
+		if err == nil {
+			u.putPooledConn(addr, freshConn)
+			return reply, nil
+		}
+		_ = freshConn.Close()
+		return nil, err
+	}
+
+	return nil, err
 }
 
 type dohUpstream struct {
-	addr   string
-	client *http.Client
-	dialer *net.Dialer // Optional custom dialer
+	addr          string
+	client        *http.Client
+	dialer        *net.Dialer // Optional custom dialer
+	transportOnce sync.Once
 }
 
 func (u *dohUpstream) Address() string { return u.addr }
+
 func (u *dohUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
-	if u.client.Transport == nil && u.dialer != nil {
-		u.client.Transport = &http.Transport{
-			DialContext: u.dialer.DialContext,
-		}
+	ctx := context.Background()
+	if u.client != nil && u.client.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, u.client.Timeout)
+		defer cancel()
+	}
+	return u.ExchangeContext(ctx, m)
+}
+
+func (u *dohUpstream) ExchangeContext(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
+	if u.dialer != nil {
+		u.transportOnce.Do(func() {
+			if u.client.Transport == nil {
+				u.client.Transport = &http.Transport{
+					DialContext: u.dialer.DialContext,
+				}
+			}
+		})
 	}
 	data, err := m.Pack()
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", u.addr, strings.NewReader(string(data)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.addr, bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}

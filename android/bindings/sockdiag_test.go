@@ -4,6 +4,7 @@ package core
 
 import (
 	"encoding/binary"
+	"errors"
 	"net"
 	"os"
 	"testing"
@@ -82,29 +83,76 @@ func diagReply(nlType uint16, srcPort, dstPort uint16, uid uint32) []byte {
 }
 
 func TestParseInetDiagUID(t *testing.T) {
-	if got := parseInetDiagUID(diagReply(sockDiagType, 0x1234, 443, 10123), 0x1234, 443); got != 10123 {
-		t.Fatalf("uid: got %d, want 10123", got)
+	if got, err := parseInetDiagUID(diagReply(sockDiagType, 0x1234, 443, 10123), 0x1234, 443); err != nil || got != 10123 {
+		t.Fatalf("uid: got (%d, %v), want (10123, nil)", got, err)
 	}
 	// Port mismatch in the reply id must be rejected, not trusted.
-	if got := parseInetDiagUID(diagReply(sockDiagType, 0x9999, 443, 10123), 0x1234, 443); got != 0 {
-		t.Fatalf("port mismatch: got %d, want 0", got)
+	if got, err := parseInetDiagUID(diagReply(sockDiagType, 0x9999, 443, 10123), 0x1234, 443); err != nil || got != 0 {
+		t.Fatalf("port mismatch: got (%d, %v), want (0, nil)", got, err)
 	}
-	// ENOENT-style NLMSG_ERROR (socket gone) is a clean zero.
-	errMsg := make([]byte, 20)
-	binary.LittleEndian.PutUint32(errMsg[0:4], 20)
-	binary.LittleEndian.PutUint16(errMsg[4:6], unix.NLMSG_ERROR)
-	// -2 = ENOENT as a negative int32 on the wire.
-	binary.LittleEndian.PutUint32(errMsg[16:20], 0xFFFFFFFE)
-	if got := parseInetDiagUID(errMsg, 0x1234, 443); got != 0 {
-		t.Fatalf("NLMSG_ERROR: got %d, want 0", got)
+	// ENOENT-style NLMSG_ERROR (socket gone) is a clean zero without error.
+	makeErrMsg := func(errno unix.Errno) []byte {
+		errMsg := make([]byte, 20)
+		binary.LittleEndian.PutUint32(errMsg[0:4], 20)
+		binary.LittleEndian.PutUint16(errMsg[4:6], unix.NLMSG_ERROR)
+		neg := -int32(errno)
+		binary.LittleEndian.PutUint32(errMsg[16:20], uint32(neg))
+		return errMsg
 	}
+	if got, err := parseInetDiagUID(makeErrMsg(unix.ENOENT), 0x1234, 443); err != nil || got != 0 {
+		t.Fatalf("NLMSG_ERROR ENOENT: got (%d, %v), want (0, nil)", got, err)
+	}
+
+	// Permission/unsupported errors must return the errno and latch sockDiagBroken.
+	prevBroken := sockDiagBroken.Load()
+	defer sockDiagBroken.Store(prevBroken)
+	for _, tc := range []unix.Errno{unix.EACCES, unix.EPERM, unix.EOPNOTSUPP} {
+		sockDiagBroken.Store(false)
+		got, err := parseInetDiagUID(makeErrMsg(tc), 0x1234, 443)
+		if got != 0 || !errors.Is(err, tc) {
+			t.Fatalf("NLMSG_ERROR %v: got (%d, %v), want (0, %v)", tc, got, err, tc)
+		}
+		latchSockDiagIfFatal(err)
+		if !sockDiagBroken.Load() {
+			t.Fatalf("NLMSG_ERROR %v must latch sockDiagBroken", tc)
+		}
+	}
+	sockDiagBroken.Store(false)
+	_, enoentErr := parseInetDiagUID(makeErrMsg(unix.ENOENT), 0x1234, 443)
+	latchSockDiagIfFatal(enoentErr)
+	if sockDiagBroken.Load() {
+		t.Fatal("NLMSG_ERROR ENOENT must NOT latch sockDiagBroken")
+	}
+
 	// uid 0 = kernel / TIME_WAIT, not attributable.
-	if got := parseInetDiagUID(diagReply(sockDiagType, 0x1234, 443, 0), 0x1234, 443); got != 0 {
-		t.Fatalf("uid 0: got %d, want 0", got)
+	if got, err := parseInetDiagUID(diagReply(sockDiagType, 0x1234, 443, 0), 0x1234, 443); err != nil || got != 0 {
+		t.Fatalf("uid 0: got (%d, %v), want (0, nil)", got, err)
 	}
 	// Truncated garbage never yields a uid.
-	if got := parseInetDiagUID([]byte{1, 2, 3}, 0x1234, 443); got != 0 {
-		t.Fatalf("truncated: got %d, want 0", got)
+	if got, err := parseInetDiagUID([]byte{1, 2, 3}, 0x1234, 443); err != nil || got != 0 {
+		t.Fatalf("truncated: got (%d, %v), want (0, nil)", got, err)
+	}
+}
+
+func TestBuildInetDiagRequestIntoClearsReusedAddrBytes(t *testing.T) {
+	var buf [sockDiagReqTotalLen]byte
+	src6 := net.ParseIP("fd00::1234").To16()
+	dst6 := net.ParseIP("2001:db8::5678").To16()
+	buildInetDiagRequestInto(buf[:], unix.AF_INET6, src6, 50000, dst6, 8443)
+
+	src4 := net.IPv4(10, 0, 0, 1).To4()
+	dst4 := net.IPv4(1, 2, 3, 4).To4()
+	req := buildInetDiagRequestInto(buf[:], unix.AF_INET, src4, 0x1234, dst4, 443)
+	id := req[24:]
+	for i := 8; i < 20; i++ {
+		if id[i] != 0 {
+			t.Fatalf("stale v6 src byte at id[%d]=%#x", i, id[i])
+		}
+	}
+	for i := 24; i < 36; i++ {
+		if id[i] != 0 {
+			t.Fatalf("stale v6 dst byte at id[%d]=%#x", i, id[i])
+		}
 	}
 }
 
@@ -181,5 +229,24 @@ func TestUIDOfTCPFlowUnattributable(t *testing.T) {
 	}
 	if sockDiagBroken.Load() {
 		t.Fatal("ENOENT lookup must not latch degraded mode")
+	}
+}
+
+func BenchmarkSockDiag_BuildAndParse(b *testing.B) {
+	src := net.IPv4(10, 0, 0, 1).To4()
+	dst := net.IPv4(1, 2, 3, 4).To4()
+	reply := diagReply(sockDiagType, 0x1234, 443, 10123)
+	var reqBuf [sockDiagReqTotalLen]byte
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		req := buildInetDiagRequestInto(reqBuf[:], unix.AF_INET, src, 0x1234, dst, 443)
+		if len(req) == 0 {
+			b.Fatal("empty request")
+		}
+		if uid, err := parseInetDiagUID(reply, 0x1234, 443); err != nil || uid != 10123 {
+			b.Fatalf("uid: got (%d, %v), want (10123, nil)", uid, err)
+		}
 	}
 }

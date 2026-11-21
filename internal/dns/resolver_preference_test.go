@@ -93,7 +93,7 @@ func TestResolver_StandardSelectsIPv6(t *testing.T) {
 			Timeout:    config.TimeoutConfig{DNS: 5},
 		},
 		backend: backend,
-		cache:   make(map[string]cacheEntry),
+		cache:   make(map[dnsCacheKey]*cacheEntry),
 	}
 
 	ip, _, err := r.resolveStandard(context.Background(), "example.com", nil)
@@ -118,7 +118,7 @@ func TestResolver_StandardFallbackToIPv4(t *testing.T) {
 			Timeout:    config.TimeoutConfig{DNS: 5},
 		},
 		backend: backend,
-		cache:   make(map[string]cacheEntry),
+		cache:   make(map[dnsCacheKey]*cacheEntry),
 	}
 
 	ip, _, err := r.resolveStandard(context.Background(), "example.com", nil)
@@ -142,7 +142,7 @@ func TestResolver_IPv4Mode(t *testing.T) {
 			Timeout:    config.TimeoutConfig{DNS: 5},
 		},
 		backend: backend,
-		cache:   make(map[string]cacheEntry),
+		cache:   make(map[dnsCacheKey]*cacheEntry),
 	}
 
 	ip, err := r.resolveUpstream(context.Background(), "example.com", nil)
@@ -165,7 +165,7 @@ func TestResolver_queryDNS(t *testing.T) {
 	r := &Resolver{
 		Config:  &config.Config{},
 		backend: backend,
-		cache:   make(map[string]cacheEntry),
+		cache:   make(map[dnsCacheKey]*cacheEntry),
 	}
 	records, _, err := r.queryDNS(context.Background(), "example.com", miekgdns.TypeA, nil)
 	if err != nil {
@@ -194,7 +194,7 @@ func TestResolver_queryDNS(t *testing.T) {
 func TestResolver_InvalidateConcurrent(t *testing.T) {
 	r := &Resolver{
 		Config: &config.Config{},
-		cache:  make(map[string]cacheEntry),
+		cache:  make(map[dnsCacheKey]*cacheEntry),
 	}
 	// Populate cache with entries
 	r.setCache("example.com", "1.2.3.4", miekgdns.TypeA, 300)
@@ -265,7 +265,7 @@ func TestResolver_CacheLRU(t *testing.T) {
 		Config: &config.Config{
 			Limit: config.LimitConfig{DNSCacheSize: 2},
 		},
-		cache: make(map[string]cacheEntry),
+		cache: make(map[dnsCacheKey]*cacheEntry),
 	}
 	// Insert three entries; the oldest should be evicted.
 	r.setCache("a", "1.1.1.1", miekgdns.TypeA, 300)
@@ -293,7 +293,7 @@ func TestResolver_Resolve_WithHostRule(t *testing.T) {
 		Config:  &config.Config{},
 		Rules:   baseRules,
 		backend: backend,
-		cache:   make(map[string]cacheEntry),
+		cache:   make(map[dnsCacheKey]*cacheEntry),
 	}
 
 	ip, err := r.Resolve(context.Background(), "example.com", nil)
@@ -313,7 +313,7 @@ func TestResolver_Resolve_IPDirect(t *testing.T) {
 	r := &Resolver{
 		Config: &config.Config{},
 		Rules:  (*ruleslib.Rules)(nil),
-		cache:  make(map[string]cacheEntry),
+		cache:  make(map[dnsCacheKey]*cacheEntry),
 	}
 
 	ip, err := r.Resolve(context.Background(), "192.0.2.1", nil)
@@ -336,7 +336,7 @@ func TestResolver_Resolve_BracketedIPv6HostRule(t *testing.T) {
 	r := &Resolver{
 		Config: &config.Config{},
 		Rules:  baseRules,
-		cache:  make(map[string]cacheEntry),
+		cache:  make(map[dnsCacheKey]*cacheEntry),
 	}
 
 	ip, err := r.Resolve(context.Background(), "behance.net", nil)
@@ -362,7 +362,7 @@ func TestResolver_Resolve_BracketedIPv6HostRule(t *testing.T) {
 func TestResolver_resolveSystem_LookupHostFailure(t *testing.T) {
 	r := &Resolver{
 		Config: &config.Config{},
-		cache:  make(map[string]cacheEntry),
+		cache:  make(map[dnsCacheKey]*cacheEntry),
 	}
 	// Use a context with cancellation to ensure LookupHost fails
 	ctx, cancel := context.WithCancel(context.Background())
@@ -380,7 +380,7 @@ func TestResolver_lookupType_BackendError(t *testing.T) {
 	r := &Resolver{
 		Config:  &config.Config{},
 		backend: backend,
-		cache:   make(map[string]cacheEntry),
+		cache:   make(map[dnsCacheKey]*cacheEntry),
 	}
 	ip, ttl, err := r.lookupType(context.Background(), "example.com", miekgdns.TypeA, nil)
 	if err == nil {
@@ -400,7 +400,7 @@ func TestResolver_lookupType_RcodeFailure(t *testing.T) {
 	r := &Resolver{
 		Config:  &config.Config{},
 		backend: backend,
-		cache:   make(map[string]cacheEntry),
+		cache:   make(map[dnsCacheKey]*cacheEntry),
 	}
 	ip, ttl, err := r.lookupType(context.Background(), "example.com", miekgdns.TypeA, nil)
 	if err == nil {
@@ -417,7 +417,7 @@ func TestResolver_buildMessage_ECS(t *testing.T) {
 		Config: &config.Config{
 			ECS: "1.2.0.0/16", // manual CIDR
 		},
-		cache: make(map[string]cacheEntry),
+		cache: make(map[dnsCacheKey]*cacheEntry),
 	}
 
 	m := r.buildMessage("example.com", miekgdns.TypeA, nil)
@@ -443,7 +443,7 @@ func TestResolver_getECS_AutoMode(t *testing.T) {
 		Config: &config.Config{
 			ECS: "auto",
 		},
-		cache:       make(map[string]cacheEntry),
+		cache:       make(map[dnsCacheKey]*cacheEntry),
 		autoECSNet4: &net.IPNet{IP: net.ParseIP("1.2.3.0"), Mask: net.CIDRMask(24, 32)},
 		autoECSNet6: &net.IPNet{IP: net.ParseIP("2001:db8::"), Mask: net.CIDRMask(48, 128)},
 	}
@@ -465,7 +465,7 @@ func TestResolver_getECS_AutoMode(t *testing.T) {
 func TestResolver_setCache_TTLBounds(t *testing.T) {
 	r := &Resolver{
 		Config: &config.Config{},
-		cache:  make(map[string]cacheEntry),
+		cache:  make(map[dnsCacheKey]*cacheEntry),
 	}
 	// TTL = 0 should become 60s
 	r.setCache("host1", "1.1.1.1", miekgdns.TypeA, 0)
@@ -489,7 +489,7 @@ func TestResolver_getCache_LRUUpdate(t *testing.T) {
 		Config: &config.Config{
 			Limit: config.LimitConfig{DNSCacheSize: 2},
 		},
-		cache: make(map[string]cacheEntry),
+		cache: make(map[dnsCacheKey]*cacheEntry),
 	}
 	// Insert two entries
 	r.setCache("a", "1.1.1.1", miekgdns.TypeA, 300)

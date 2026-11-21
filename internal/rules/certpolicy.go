@@ -30,6 +30,7 @@ func ParseCertPolicy(data interface{}) (CertPolicy, error) {
 		}
 	case []interface{}:
 		p.Enabled = true
+		p.Allowed = make([]string, 0, len(v))
 		for _, item := range v {
 			if s, ok := item.(string); ok {
 				p.Allowed = append(p.Allowed, s)

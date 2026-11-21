@@ -183,3 +183,48 @@ type stringErr string
 func (e stringErr) Error() string { return string(e) }
 
 func errUnexpected(got string) error { return stringErr("unexpected: " + got) }
+
+func TestParseSNI_MalformedAndBoundary(t *testing.T) {
+	// Must never panic on truncated, oversized-length, or garbage inputs.
+	cases := [][]byte{
+		nil,
+		{},
+		make([]byte, 34),
+		make([]byte, 35), // sidLen=0, missing csLen
+		// sidLen claims 200 bytes when buffer ends
+		append(make([]byte, 34), 200, 1, 2, 3),
+		// sidLen=0, csLen claims 500 bytes
+		append(make([]byte, 34), 0, 0x01, 0xf4, 0, 0),
+		// sidLen=0, csLen=0, compLen claims 99 bytes
+		append(make([]byte, 34), 0, 0, 0, 99, 0),
+		// sidLen=0, csLen=0, compLen=0, extLen claims 1000 bytes
+		append(make([]byte, 34), 0, 0, 0, 0, 0x03, 0xe8, 0, 0),
+		// valid header up to server_name extension with truncated listLen / nameLen
+		append(make([]byte, 34), 0, 0, 0, 0, 0, 6, 0, 0, 0, 2, 0, 10),
+		append(make([]byte, 34), 0, 0, 0, 0, 0, 9, 0, 0, 0, 5, 0, 3, 0, 0, 50),
+	}
+	for i, tc := range cases {
+		if got := parseSNI(tc); got != "" {
+			t.Errorf("case %d: expected empty SNI, got %q", i, got)
+		}
+	}
+
+	// Valid ClientHello body truncated at every possible byte boundary must not panic.
+	full := buildRealisticClientHello("sub.example.org", 512)
+	body := full[9:] // skip 5-byte record hdr + 4-byte handshake hdr
+	for i := 0; i < len(body); i++ {
+		_ = parseSNI(body[:i])
+	}
+	if got := parseSNI(body); got != "sub.example.org" {
+		t.Fatalf("full body parseSNI = %q, want sub.example.org", got)
+	}
+}
+
+func FuzzParseSNI(f *testing.F) {
+	f.Add(buildRealisticClientHello("example.org", 256)[9:])
+	f.Add([]byte{})
+	f.Add(append(make([]byte, 34), 255))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		_ = parseSNI(data)
+	})
+}

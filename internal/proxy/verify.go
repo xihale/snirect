@@ -184,27 +184,20 @@ func hasServerAuthEKU(cert *x509.Certificate) bool {
 }
 
 // verifyCertificateChain validates the certificate chain up to a trusted root.
-// If roots is nil, system root CAs are used.
+// If roots is nil, Go's cached system root store is used directly without cloning.
 func verifyCertificateChain(leaf *x509.Certificate, state tls.ConnectionState, roots *x509.CertPool) error {
-	// Build intermediate pool from peer certificates (excluding leaf)
+	// Check chain length before allocating the intermediate pool.
+	if len(state.PeerCertificates) < minChainLength {
+		return fmt.Errorf("chain too short: %d < %d", len(state.PeerCertificates), minChainLength)
+	}
+
+	// Build intermediate pool from peer certificates (excluding leaf).
 	intermediates := x509.NewCertPool()
 	for _, cert := range state.PeerCertificates[1:] {
 		intermediates.AddCert(cert)
 	}
 
-	// Use provided roots or fall back to system roots
-	if roots == nil {
-		var err error
-		roots, err = x509.SystemCertPool()
-		if err != nil {
-			return fmt.Errorf("failed to get system cert pool: %w", err)
-		}
-		if roots == nil {
-			return fmt.Errorf("system cert pool is nil")
-		}
-	}
-
-	// Build verification options
+	// Build verification options (nil Roots uses Go's singleton systemRootsPool).
 	opts := x509.VerifyOptions{
 		Roots:         roots,
 		Intermediates: intermediates,
@@ -213,15 +206,8 @@ func verifyCertificateChain(leaf *x509.Certificate, state tls.ConnectionState, r
 	}
 
 	// Verify the chain
-	_, err := leaf.Verify(opts)
-	if err != nil {
+	if _, err := leaf.Verify(opts); err != nil {
 		return fmt.Errorf("chain verification failed: %w", err)
-	}
-
-	// Check chain length
-	chain := state.PeerCertificates
-	if len(chain) < minChainLength {
-		return fmt.Errorf("chain too short: %d < %d", len(chain), minChainLength)
 	}
 
 	return nil

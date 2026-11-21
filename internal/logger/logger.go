@@ -7,18 +7,30 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/xihale/snirect/internal/color"
 )
 
+type loggerSnapshot struct {
+	base     *slog.Logger
+	client   *slog.Logger
+	upstream *slog.Logger
+	dns      *slog.Logger
+	system   *slog.Logger
+	control  *slog.Logger
+	handler  *MultiHandler
+}
+
 var (
-	currentLogger *slog.Logger
-	logLevel      *slog.LevelVar
-	mu            sync.RWMutex
-	logFile       *os.File
+	currentSnapshot atomic.Pointer[loggerSnapshot]
+	logLevel        *slog.LevelVar
+	mu              sync.Mutex
+	logFile         *os.File
 )
 
 // Side names the part of the system a log line concerns. It is rendered as
@@ -44,9 +56,23 @@ func init() {
 	}
 }
 
+func buildSnapshot(mh *MultiHandler) *loggerSnapshot {
+	base := slog.New(mh)
+	return &loggerSnapshot{
+		base:     base,
+		client:   base.With("side", string(SideClient)),
+		upstream: base.With("side", string(SideUpstream)),
+		dns:      base.With("side", string(SideDNS)),
+		system:   base.With("side", string(SideSystem)),
+		control:  base.With("side", string(SideControl)),
+		handler:  mh,
+	}
+}
+
 func updateLogger(path string) error {
 	consoleWriter := &consoleHandler{
-		w: os.Stdout,
+		w:   os.Stdout,
+		wMu: &sync.Mutex{},
 	}
 
 	var newFile *os.File
@@ -78,12 +104,12 @@ func updateLogger(path string) error {
 		})
 	}
 
-	newLogger := slog.New(handler)
+	snap := buildSnapshot(handler)
 
 	mu.Lock()
 	oldFile := logFile
-	currentLogger = newLogger
 	logFile = newFile
+	currentSnapshot.Store(snap)
 	mu.Unlock()
 
 	if oldFile != nil && oldFile != newFile {
@@ -92,7 +118,7 @@ func updateLogger(path string) error {
 
 	if newFile != nil {
 		absPath, _ := filepath.Abs(path)
-		newLogger.Info("Logging to file", "path", absPath)
+		snap.base.Info("Logging to file", "path", absPath)
 	}
 
 	return nil
@@ -118,17 +144,20 @@ func (h *MultiHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h *MultiHandler) Handle(ctx context.Context, r slog.Record) error {
-	// File gets every record, unchanged.
-	if h.file != nil {
+	// File gets every enabled record, unchanged.
+	if h.file != nil && h.file.Enabled(ctx, r.Level) {
 		if err := h.file.Handle(ctx, r); err != nil {
 			return err
 		}
 	}
-	// Sinks (e.g. mobile UI forwarder) get every record too, after the file.
+	// Sinks (e.g. mobile UI forwarder) get every enabled record too, after the file.
 	h.sinksMu.RLock()
 	sinks := h.sinks
 	h.sinksMu.RUnlock()
 	for _, s := range sinks {
+		if !s.Enabled(ctx, r.Level) {
+			continue
+		}
 		if err := s.Handle(ctx, r.Clone()); err != nil {
 			return err
 		}
@@ -146,12 +175,16 @@ func (h *MultiHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	}
 	// Sinks see attrs too so a per-side logger (WithAttrs("side", ...)) still
 	// tags records delivered to mobile.
-	newH.sinksMu.Lock()
-	newH.sinks = make([]slog.Handler, len(h.sinks))
-	for i, s := range h.sinks {
-		newH.sinks[i] = s.WithAttrs(attrs)
+	h.sinksMu.RLock()
+	srcSinks := h.sinks
+	h.sinksMu.RUnlock()
+	if len(srcSinks) > 0 {
+		newSinks := make([]slog.Handler, len(srcSinks))
+		for i, s := range srcSinks {
+			newSinks[i] = s.WithAttrs(attrs)
+		}
+		newH.sinks = newSinks
 	}
-	newH.sinksMu.Unlock()
 	return newH
 }
 
@@ -163,12 +196,16 @@ func (h *MultiHandler) WithGroup(name string) slog.Handler {
 	if h.file != nil {
 		newH.file = h.file.WithGroup(name)
 	}
-	newH.sinksMu.Lock()
-	newH.sinks = make([]slog.Handler, len(h.sinks))
-	for i, s := range h.sinks {
-		newH.sinks[i] = s.WithGroup(name)
+	h.sinksMu.RLock()
+	srcSinks := h.sinks
+	h.sinksMu.RUnlock()
+	if len(srcSinks) > 0 {
+		newSinks := make([]slog.Handler, len(srcSinks))
+		for i, s := range srcSinks {
+			newSinks[i] = s.WithGroup(name)
+		}
+		newH.sinks = newSinks
 	}
-	newH.sinksMu.Unlock()
 	return newH
 }
 
@@ -181,19 +218,40 @@ func (h *MultiHandler) WithGroup(name string) slog.Handler {
 // from an exported function or explicit Init — early package init order is not
 // guaranteed across modules.
 func InstallSink(sink slog.Handler) bool {
+	if sink == nil {
+		return false
+	}
 	mu.Lock()
 	defer mu.Unlock()
-	if currentLogger == nil {
+	snap := currentSnapshot.Load()
+	if snap == nil || snap.handler == nil {
 		return false
 	}
-	mh, ok := currentLogger.Handler().(*MultiHandler)
-	if !ok {
-		return false
-	}
+	mh := snap.handler
 	mh.sinksMu.Lock()
-	mh.sinks = append(mh.sinks, sink)
+	nextSinks := make([]slog.Handler, len(mh.sinks)+1)
+	copy(nextSinks, mh.sinks)
+	nextSinks[len(mh.sinks)] = sink
+	mh.sinks = nextSinks
 	mh.sinksMu.Unlock()
+
+	// Rebuild the cached per-side loggers so they carry sink.WithAttrs("side", ...).
+	currentSnapshot.Store(buildSnapshot(mh))
 	return true
+}
+
+type consoleBuf struct {
+	buf   []byte
+	attrs []slog.Attr
+}
+
+var consoleBufPool = sync.Pool{
+	New: func() any {
+		return &consoleBuf{
+			buf:   make([]byte, 0, 512),
+			attrs: make([]slog.Attr, 0, 16),
+		}
+	},
 }
 
 // consoleHandler formats logs for human readability:
@@ -204,9 +262,11 @@ func InstallSink(sink slog.Handler) bool {
 // reader can immediately see which site and which side of the connection a line
 // concerns.
 type consoleHandler struct {
-	w      io.Writer
-	attrs  []slog.Attr
-	groups []string
+	w           io.Writer
+	wMu         *sync.Mutex
+	attrs       []slog.Attr
+	groups      []string
+	groupPrefix string
 }
 
 func (h *consoleHandler) Enabled(ctx context.Context, level slog.Level) bool {
@@ -214,50 +274,43 @@ func (h *consoleHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h *consoleHandler) Handle(ctx context.Context, r slog.Record) error {
-	// Collect attrs (handler-held + record-held).
-	all := append([]slog.Attr{}, h.attrs...)
-	r.Attrs(func(a slog.Attr) bool {
-		all = append(all, a)
-		return true
-	})
+	cb := consoleBufPool.Get().(*consoleBuf)
+	cb.buf = cb.buf[:0]
+	cb.attrs = cb.attrs[:0]
 
-	// Pull side, process, and host out of the attr set for prefix rendering.
-	// Build `rest` as a fresh slice (not an alias) so the dropped attrs don't
-	// leak through. `process` is only present in TUN mode (per-connection
-	// attribution); rendering it between side and host keeps a TUN log line
-	// scannable: [client] [telegram] api.telegram.org ...
-	var side string
-	var process string
-	var host string
-	rest := make([]slog.Attr, 0, len(all))
-	for _, a := range all {
+	var side, process, host string
+	collectAttr := func(a slog.Attr) {
 		switch a.Key {
 		case "side":
 			side = a.Value.String()
-			continue
+			return
 		case "process":
 			process = a.Value.String()
-			continue
+			return
 		case "host":
 			host = a.Value.String()
-			continue
+			return
 		case "target":
 			// Some DNS lines use "target" instead of "host".
 			if host == "" {
 				host = a.Value.String()
-				continue
+				return
 			}
 		}
-		rest = append(rest, a)
+		cb.attrs = append(cb.attrs, a)
 	}
 
-	level := r.Level.String()
-	msg := r.Message
-	timeStr := r.Time.Format("15:04:05")
+	for _, a := range h.attrs {
+		collectAttr(a)
+	}
+	r.Attrs(func(a slog.Attr) bool {
+		collectAttr(a)
+		return true
+	})
 
-	var levelColor, reset, timeColor string
-	reset = color.If(color.Reset)
-	timeColor = color.If(color.Gray)
+	reset := color.If(color.Reset)
+	timeColor := color.If(color.Gray)
+	var levelColor string
 	switch r.Level {
 	case slog.LevelDebug:
 		levelColor = color.If(color.Gray)
@@ -269,110 +322,149 @@ func (h *consoleHandler) Handle(ctx context.Context, r slog.Record) error {
 		levelColor = color.If(color.Red)
 	}
 
-	attrText := formatAttrs(h.groups, rest)
-	if attrText != "" {
-		msg = msg + " " + attrText
-	}
+	buf := cb.buf
+	// [time]
+	buf = append(buf, timeColor...)
+	buf = append(buf, '[')
+	buf = r.Time.AppendFormat(buf, "15:04:05")
+	buf = append(buf, ']')
+	buf = append(buf, reset...)
+	// [LEVEL]
+	buf = append(buf, " ["...)
+	buf = append(buf, levelColor...)
+	buf = append(buf, r.Level.String()...)
+	buf = append(buf, reset...)
+	buf = append(buf, ']')
 
 	// Build the prefix: `[side] [process] host`. Each segment is optional — a
 	// control/lifecycle line often has none; a TUN-mode client line has all
 	// three. Render only the present ones so we never print placeholders.
-	prefix := ""
 	if side != "" {
-		prefix += fmt.Sprintf(" [%s%s%s]", color.If(color.Cyan), side, reset)
+		buf = append(buf, " ["...)
+		buf = append(buf, color.If(color.Cyan)...)
+		buf = append(buf, side...)
+		buf = append(buf, reset...)
+		buf = append(buf, ']')
 	}
 	if process != "" {
-		prefix += fmt.Sprintf(" [%s%s%s]", color.If(color.Gray), process, reset)
+		buf = append(buf, " ["...)
+		buf = append(buf, color.If(color.Gray)...)
+		buf = append(buf, process...)
+		buf = append(buf, reset...)
+		buf = append(buf, ']')
 	}
 	if host != "" {
-		prefix += fmt.Sprintf(" %s%s%s", color.If(color.Blue), host, reset)
+		buf = append(buf, ' ')
+		buf = append(buf, color.If(color.Blue)...)
+		buf = append(buf, host...)
+		buf = append(buf, reset...)
 	}
 
-	_, err := fmt.Fprintf(h.w, "%s[%s]%s [%s%s%s]%s %s\n",
-		timeColor, timeStr, reset,
-		levelColor, level, reset,
-		prefix,
-		msg)
+	buf = append(buf, ' ')
+	buf = append(buf, r.Message...)
+
+	for _, a := range cb.attrs {
+		buf, _ = appendAttr(buf, h.groupPrefix, a, true)
+	}
+	buf = append(buf, '\n')
+
+	if h.wMu != nil {
+		h.wMu.Lock()
+	}
+	_, err := h.w.Write(buf)
+	if h.wMu != nil {
+		h.wMu.Unlock()
+	}
+
+	clear(cb.attrs)
+	cb.attrs = cb.attrs[:0]
+	if cap(buf) <= 64*1024 {
+		cb.buf = buf[:0]
+		consoleBufPool.Put(cb)
+	}
 	return err
 }
 
 func (h *consoleHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	clone := *h
-	clone.attrs = append(append([]slog.Attr{}, h.attrs...), attrs...)
+	clone.attrs = append(append([]slog.Attr(nil), h.attrs...), attrs...)
 	return &clone
 }
 
 func (h *consoleHandler) WithGroup(name string) slog.Handler {
 	clone := *h
-	clone.groups = append(append([]string{}, h.groups...), name)
+	clone.groups = append(append([]string(nil), h.groups...), name)
+	if len(clone.groups) > 0 {
+		clone.groupPrefix = strings.Join(clone.groups, ".") + "."
+	}
 	return &clone
 }
 
 // Write implements io.Writer to support standard logger compatibility if needed
 func (h *consoleHandler) Write(p []byte) (n int, err error) {
+	if h.wMu != nil {
+		h.wMu.Lock()
+		defer h.wMu.Unlock()
+	}
 	return h.w.Write(p)
 }
 
-func formatAttrs(groups []string, attrs []slog.Attr) string {
-	if len(attrs) == 0 {
-		return ""
-	}
-
-	parts := make([]string, 0, len(attrs))
-	for _, attr := range attrs {
-		parts = append(parts, formatAttr(groups, attr))
-	}
-	return strings.Join(parts, " ")
-}
-
-func formatAttr(groups []string, attr slog.Attr) string {
+func appendAttr(buf []byte, groupPrefix string, attr slog.Attr, needSpace bool) ([]byte, bool) {
 	if attr.Equal(slog.Attr{}) {
-		return ""
+		return buf, false
 	}
 
 	resolved := attr.Value.Resolve()
-	key := attr.Key
-	if len(groups) > 0 {
-		key = strings.Join(append(append([]string{}, groups...), key), ".")
+	if resolved.Kind() == slog.KindGroup {
+		childPrefix := groupPrefix
+		if attr.Key != "" {
+			childPrefix = groupPrefix + attr.Key + "."
+		}
+		wroteAny := false
+		for _, child := range resolved.Group() {
+			var wrote bool
+			buf, wrote = appendAttr(buf, childPrefix, child, needSpace)
+			if wrote {
+				needSpace = true
+				wroteAny = true
+			}
+		}
+		return buf, wroteAny
 	}
+
+	if needSpace {
+		buf = append(buf, ' ')
+	}
+	buf = append(buf, groupPrefix...)
+	buf = append(buf, attr.Key...)
+	buf = append(buf, '=')
 
 	switch resolved.Kind() {
-	case slog.KindGroup:
-		groupParts := make([]string, 0, len(resolved.Group()))
-		for _, child := range resolved.Group() {
-			groupParts = append(groupParts, formatAttr(append(groups, key), child))
-		}
-		return strings.Join(groupParts, " ")
 	case slog.KindString:
-		return fmt.Sprintf("%s=%q", key, resolved.String())
+		buf = strconv.AppendQuote(buf, resolved.String())
 	case slog.KindDuration:
-		return fmt.Sprintf("%s=%s", key, resolved.Duration())
+		buf = append(buf, resolved.Duration().String()...)
 	case slog.KindTime:
-		return fmt.Sprintf("%s=%s", key, resolved.Time().Format(time.RFC3339))
+		buf = resolved.Time().AppendFormat(buf, time.RFC3339)
 	case slog.KindBool:
-		return fmt.Sprintf("%s=%t", key, resolved.Bool())
+		buf = strconv.AppendBool(buf, resolved.Bool())
 	case slog.KindInt64:
-		return fmt.Sprintf("%s=%d", key, resolved.Int64())
+		buf = strconv.AppendInt(buf, resolved.Int64(), 10)
 	case slog.KindUint64:
-		return fmt.Sprintf("%s=%d", key, resolved.Uint64())
+		buf = strconv.AppendUint(buf, resolved.Uint64(), 10)
 	case slog.KindFloat64:
-		return fmt.Sprintf("%s=%g", key, resolved.Float64())
-	case slog.KindAny:
-		return fmt.Sprintf("%s=%v", key, resolved.Any())
+		buf = strconv.AppendFloat(buf, resolved.Float64(), 'g', -1, 64)
 	default:
-		return fmt.Sprintf("%s=%v", key, resolved.Any())
+		buf = fmt.Append(buf, resolved.Any())
 	}
+	return buf, true
 }
 
-// Default returns the current logger. Re-read on every call so a runtime
-// SetOutput reconfiguration is picked up — callers that capture
-// logger.Default() at package init would otherwise pin a stale handler.
+// Default returns the current logger. Re-read via atomic snapshot on every call
+// so a runtime SetOutput or InstallSink update is picked up immediately.
 func Default() *slog.Logger {
-	mu.RLock()
-	logger := currentLogger
-	mu.RUnlock()
-	if logger != nil {
-		return logger
+	if snap := currentSnapshot.Load(); snap != nil && snap.base != nil {
+		return snap.base
 	}
 	return slog.Default()
 }
@@ -381,8 +473,8 @@ func With(args ...any) *slog.Logger {
 	return Default().With(args...)
 }
 
-// Per-side accessors resolve Default() on each call (see Default's note), then
-// attach the `side` attr so the console handler renders `[side]`.
+// Per-side accessors return pre-built *slog.Logger instances from the active
+// atomic snapshot, avoiding mutex locks and per-call With("side", ...) allocs.
 
 // Client logs failures on the client side (the browser/app talking to us), e.g.
 // the client TLS handshake, leaf-cert signing.
@@ -403,7 +495,24 @@ func Control() *slog.Logger { return For(SideControl) }
 
 // For returns the current logger tagged with the given side.
 func For(side Side) *slog.Logger {
-	return Default().With("side", string(side))
+	snap := currentSnapshot.Load()
+	if snap == nil {
+		return slog.Default().With("side", string(side))
+	}
+	switch side {
+	case SideClient:
+		return snap.client
+	case SideUpstream:
+		return snap.upstream
+	case SideDNS:
+		return snap.dns
+	case SideSystem:
+		return snap.system
+	case SideControl:
+		return snap.control
+	default:
+		return snap.base.With("side", string(side))
+	}
 }
 
 func SetLevel(l string) {

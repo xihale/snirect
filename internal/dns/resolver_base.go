@@ -4,6 +4,7 @@ package dns
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/xihale/snirect/internal/config"
 	"github.com/xihale/snirect/internal/logger"
@@ -11,21 +12,34 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/miekg/dns"
+	"golang.org/x/sync/singleflight"
 )
 
 type dnsBackend interface {
 	Exchange(m *dns.Msg) (*dns.Msg, string, error)
 }
 
+type dnsContextBackend interface {
+	ExchangeContext(ctx context.Context, m *dns.Msg) (*dns.Msg, string, error)
+}
+
+type dnsCacheKey struct {
+	host  string
+	qType uint16
+}
+
 type cacheEntry struct {
 	ip           string
+	negative     bool
 	expiresAt    time.Time
-	lastAccessed time.Time // LRU: track last access time
+	lastAccessed atomic.Int64 // UnixNano, updated lock-free under RLock
 }
 
 type ipRecord struct {
@@ -33,17 +47,35 @@ type ipRecord struct {
 	ttl uint32
 }
 
+var errNegativeCacheHit = errors.New("dns negative cache hit")
+
+type negativeDNSError struct {
+	ttl time.Duration
+	err error
+}
+
+func (e *negativeDNSError) Error() string { return e.err.Error() }
+func (e *negativeDNSError) Unwrap() error { return e.err }
+
 type Resolver struct {
 	Config  *config.Config
 	Rules   *rules.Rules
 	backend dnsBackend
 
-	cache   map[string]cacheEntry
+	cache   map[dnsCacheKey]*cacheEntry
 	cacheMu sync.RWMutex
+
+	lookupSF singleflight.Group
+	systemSF singleflight.Group
+
+	staticECSOnce sync.Once
+	staticECSNet  *net.IPNet
 
 	autoECSNet4  *net.IPNet
 	autoECSNet6  *net.IPNet
 	autoECSNetMu sync.RWMutex
+
+	negativeCacheTTL time.Duration // Optional override for testing; defaults to 60s
 
 	dialer   *net.Dialer // Optional custom dialer for upstream connections
 	stopChan chan struct{}
@@ -65,7 +97,7 @@ func NewResolver(cfg *config.Config, rules *rules.Rules, opts ...ResolverOption)
 	r := &Resolver{
 		Config:   cfg,
 		Rules:    rules,
-		cache:    make(map[string]cacheEntry),
+		cache:    make(map[dnsCacheKey]*cacheEntry),
 		stopChan: make(chan struct{}),
 	}
 
@@ -73,6 +105,7 @@ func NewResolver(cfg *config.Config, rules *rules.Rules, opts ...ResolverOption)
 		opt(r)
 	}
 
+	r.initStaticECS()
 	r.backend = newBackend(cfg, rules, r.dialer)
 
 	go r.cleanCacheRoutine()
@@ -190,25 +223,46 @@ func (r *Resolver) resolveSystem(ctx context.Context, host, target string) (stri
 	if ip, ok := r.getCache(target, 0); ok {
 		return ip, nil
 	}
-
-	ips, err := net.DefaultResolver.LookupHost(ctx, target)
-	if err != nil {
-		return "", fmt.Errorf("dns: could not resolve %s: %w", host, err)
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 
-	selectedIP := ips[0]
-	if r.Config.IPv6 {
-		for _, ip := range ips {
-			if net.ParseIP(ip).To4() == nil {
-				selectedIP = ip
-				break
+	ch := r.systemSF.DoChan(target, func() (any, error) {
+		if ip, ok := r.getCache(target, 0); ok {
+			return ip, nil
+		}
+		flightCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.queryTimeout())
+		defer cancel()
+
+		ips, err := net.DefaultResolver.LookupHost(flightCtx, target)
+		if err != nil {
+			return nil, fmt.Errorf("dns: could not resolve %s: %w", host, err)
+		}
+
+		selectedIP := ips[0]
+		if r.Config != nil && r.Config.IPv6 {
+			for _, ip := range ips {
+				if net.ParseIP(ip).To4() == nil {
+					selectedIP = ip
+					break
+				}
 			}
 		}
+		logger.DNS().Debug("dns system resolved", "host", host, "ip", selectedIP)
+		// System resolver doesn't expose TTL, use a conservative default (5m)
+		r.setCache(target, selectedIP, 0, 300)
+		return selectedIP, nil
+	})
+
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case res := <-ch:
+		if res.Err != nil {
+			return "", res.Err
+		}
+		return res.Val.(string), nil
 	}
-	logger.DNS().Debug("dns system resolved", "host", host, "ip", selectedIP)
-	// System resolver doesn't expose TTL, use a conservative default (5m)
-	r.setCache(target, selectedIP, 0, 300)
-	return selectedIP, nil
 }
 
 // resolveUpstream resolves via the configured DNS upstreams, honoring the IP
@@ -240,15 +294,65 @@ func (r *Resolver) resolveStandard(ctx context.Context, target string, clientIP 
 	return r.lookupType(ctx, target, dns.TypeA, clientIP)
 }
 
+func (r *Resolver) queryTimeout() time.Duration {
+	if r.Config != nil && r.Config.Timeout.DNS > 0 {
+		return time.Duration(r.Config.Timeout.DNS) * time.Second
+	}
+	return 5 * time.Second
+}
+
+func (r *Resolver) negCacheTTL() time.Duration {
+	if r.negativeCacheTTL > 0 {
+		return r.negativeCacheTTL
+	}
+	return 60 * time.Second
+}
+
+func (r *Resolver) negativeTTLFromMsg(reply *dns.Msg) time.Duration {
+	if r.negativeCacheTTL > 0 {
+		return r.negativeCacheTTL
+	}
+	const maxNegTTL = 60 * time.Second
+	const minNegTTL = 5 * time.Second
+	if reply != nil {
+		for _, ns := range reply.Ns {
+			if soa, ok := ns.(*dns.SOA); ok {
+				ttl := time.Duration(soa.Minttl) * time.Second
+				if ttl <= 0 {
+					return minNegTTL
+				}
+				if ttl > maxNegTTL {
+					return maxNegTTL
+				}
+				return ttl
+			}
+		}
+	}
+	return maxNegTTL
+}
+
 // queryDNS performs a DNS query and returns all matching records along with the upstream address.
 func (r *Resolver) queryDNS(ctx context.Context, target string, qType uint16, clientIP net.IP) ([]ipRecord, string, error) {
 	m := r.buildMessage(target, qType, clientIP)
-	reply, addr, err := r.backend.Exchange(m)
+	var (
+		reply *dns.Msg
+		addr  string
+		err   error
+	)
+	if cb, ok := r.backend.(dnsContextBackend); ok {
+		reply, addr, err = cb.ExchangeContext(ctx, m)
+	} else {
+		reply, addr, err = r.backend.Exchange(m)
+	}
 	if err != nil {
 		return nil, "", err
 	}
 	if reply.Rcode != dns.RcodeSuccess {
-		return nil, "", fmt.Errorf("dns rcode %s from %s", dns.RcodeToString[reply.Rcode], addr)
+		err := fmt.Errorf("dns rcode %s from %s", dns.RcodeToString[reply.Rcode], addr)
+		if reply.Rcode == dns.RcodeNameError {
+			return nil, "", &negativeDNSError{ttl: r.negativeTTLFromMsg(reply), err: err}
+		}
+		return nil, "", err
 	}
 	var records []ipRecord
 	for _, ans := range reply.Answer {
@@ -264,26 +368,74 @@ func (r *Resolver) queryDNS(ctx context.Context, target string, qType uint16, cl
 		}
 	}
 	if len(records) == 0 {
-		return nil, "", fmt.Errorf("no records of type %d found", qType)
+		return nil, "", &negativeDNSError{
+			ttl: r.negativeTTLFromMsg(reply),
+			err: fmt.Errorf("no records of type %d found", qType),
+		}
 	}
 	return records, addr, nil
+}
+
+type lookupResult struct {
+	ip  string
+	ttl uint32
+}
+
+func sfLookupKey(host string, qType uint16) string {
+	return host + ":" + strconv.FormatUint(uint64(qType), 10)
 }
 
 // lookupType returns the first A or AAAA record for the target. It consults
 // the shared DNS cache first and stores upstream answers under the record's
 // TTL, so repeated lookups do not re-query upstreams.
 func (r *Resolver) lookupType(ctx context.Context, target string, qType uint16, clientIP net.IP) (string, uint32, error) {
-	if ip, ok := r.getCache(target, qType); ok {
+	if ip, neg, ok := r.getCacheEntry(target, qType); ok {
+		if neg {
+			return "", 0, errNegativeCacheHit
+		}
 		return ip, 0, nil
 	}
-	records, addr, err := r.queryDNS(ctx, target, qType, clientIP)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return "", 0, err
 	}
-	first := records[0]
-	logger.DNS().Debug("dns query resolved", "target", target, "ip", first.ip, "type", dns.TypeToString[qType], "ttl", first.ttl, "upstream", addr)
-	r.setCache(target, first.ip, qType, first.ttl)
-	return first.ip, first.ttl, nil
+
+	sfKey := sfLookupKey(target, qType)
+	ch := r.lookupSF.DoChan(sfKey, func() (any, error) {
+		if ip, neg, ok := r.getCacheEntry(target, qType); ok {
+			if neg {
+				return nil, errNegativeCacheHit
+			}
+			return lookupResult{ip: ip, ttl: 0}, nil
+		}
+
+		// Detached bounded timeout prevents one caller's cancellation from aborting peers.
+		flightCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.queryTimeout())
+		defer cancel()
+
+		records, addr, err := r.queryDNS(flightCtx, target, qType, clientIP)
+		if err != nil {
+			var negErr *negativeDNSError
+			if errors.As(err, &negErr) {
+				r.setNegativeCache(target, qType, negErr.ttl)
+			}
+			return nil, err
+		}
+		first := records[0]
+		logger.DNS().Debug("dns query resolved", "target", target, "ip", first.ip, "type", dns.TypeToString[qType], "ttl", first.ttl, "upstream", addr)
+		r.setCache(target, first.ip, qType, first.ttl)
+		return lookupResult(first), nil
+	})
+
+	select {
+	case <-ctx.Done():
+		return "", 0, ctx.Err()
+	case res := <-ch:
+		if res.Err != nil {
+			return "", 0, res.Err
+		}
+		lr := res.Val.(lookupResult)
+		return lr.ip, lr.ttl, nil
+	}
 }
 
 func (r *Resolver) buildMessage(target string, qType uint16, clientIP net.IP) *dns.Msg {
@@ -292,7 +444,7 @@ func (r *Resolver) buildMessage(target string, qType uint16, clientIP net.IP) *d
 	m.Id = dns.Id()
 	m.RecursionDesired = true
 
-	if r.Config.ECS != "" {
+	if r.Config != nil && r.Config.ECS != "" {
 		if ecs := r.getECS(qType, clientIP); ecs != nil {
 			o := m.IsEdns0()
 			if o == nil {
@@ -303,6 +455,18 @@ func (r *Resolver) buildMessage(target string, qType uint16, clientIP net.IP) *d
 		}
 	}
 	return m
+}
+
+func (r *Resolver) initStaticECS() {
+	r.staticECSOnce.Do(func() {
+		if r.Config == nil || r.Config.ECS == "" || r.Config.ECS == "auto" {
+			return
+		}
+		_, parsed, err := net.ParseCIDR(r.Config.ECS)
+		if err == nil {
+			r.staticECSNet = parsed
+		}
+	})
 }
 
 func (r *Resolver) getECS(qType uint16, clientIP net.IP) *dns.EDNS0_SUBNET {
@@ -333,10 +497,8 @@ func (r *Resolver) getECS(qType uint16, clientIP net.IP) *dns.EDNS0_SUBNET {
 			}
 		}
 	} else {
-		_, parsed, err := net.ParseCIDR(r.Config.ECS)
-		if err == nil {
-			ipNet = parsed
-		}
+		r.initStaticECS()
+		ipNet = r.staticECSNet
 	}
 
 	if ipNet == nil {
@@ -360,32 +522,29 @@ func (r *Resolver) getECS(qType uint16, clientIP net.IP) *dns.EDNS0_SUBNET {
 	return e
 }
 
-func (r *Resolver) cacheKey(host string, qType uint16) string {
-	return fmt.Sprintf("%s:%d", host, qType)
+func (r *Resolver) getCache(host string, qType uint16) (string, bool) {
+	ip, neg, ok := r.getCacheEntry(host, qType)
+	if !ok || neg {
+		return "", false
+	}
+	return ip, true
 }
 
-func (r *Resolver) getCache(host string, qType uint16) (string, bool) {
-	key := r.cacheKey(host, qType)
+func (r *Resolver) getCacheEntry(host string, qType uint16) (string, bool, bool) {
+	key := dnsCacheKey{host: host, qType: qType}
+	now := time.Now()
+
 	r.cacheMu.RLock()
-	entry, ok := r.cache[key]
-	if ok && time.Now().Before(entry.expiresAt) {
-		// Need to update lastAccessed, upgrade to write lock
+	entry := r.cache[key]
+	if entry != nil && now.Before(entry.expiresAt) {
+		entry.lastAccessed.Store(now.UnixNano())
+		ip := entry.ip
+		neg := entry.negative
 		r.cacheMu.RUnlock()
-		r.cacheMu.Lock()
-		// Double-check entry still exists and not expired (another goroutine may have modified)
-		if e, stillExists := r.cache[key]; stillExists && time.Now().Before(e.expiresAt) {
-			r.cache[key] = cacheEntry{
-				ip:           e.ip,
-				expiresAt:    e.expiresAt,
-				lastAccessed: time.Now(),
-			}
-		}
-		r.cacheMu.Unlock()
-		// Return the IP regardless of double-check outcome (original entry was valid)
-		return entry.ip, true
+		return ip, neg, true
 	}
 	r.cacheMu.RUnlock()
-	return "", false
+	return "", false, false
 }
 
 func (r *Resolver) setCache(host, ip string, qType uint16, ttl uint32) {
@@ -395,37 +554,80 @@ func (r *Resolver) setCache(host, ip string, qType uint16, ttl uint32) {
 	if ttl > 86400 {
 		ttl = 86400 // Maximum 24h
 	}
+	r.putCacheEntry(dnsCacheKey{host: host, qType: qType}, ip, false, time.Duration(ttl)*time.Second)
+}
+
+func (r *Resolver) setNegativeCache(host string, qType uint16, ttl time.Duration) {
+	if ttl <= 0 {
+		ttl = r.negCacheTTL()
+	}
+	r.putCacheEntry(dnsCacheKey{host: host, qType: qType}, "", true, ttl)
+}
+
+func (r *Resolver) putCacheEntry(key dnsCacheKey, ip string, negative bool, ttl time.Duration) {
+	now := time.Now()
+	entry := &cacheEntry{
+		ip:        ip,
+		negative:  negative,
+		expiresAt: now.Add(ttl),
+	}
+	entry.lastAccessed.Store(now.UnixNano())
 
 	r.cacheMu.Lock()
 	defer r.cacheMu.Unlock()
 
-	limit := r.Config.Limit.DNSCacheSize
-	if limit <= 0 {
-		limit = 10000
+	if r.cache == nil {
+		r.cache = make(map[dnsCacheKey]*cacheEntry)
 	}
 
-	// LRU eviction: if cache is full, remove the least recently used entry
-	if len(r.cache) >= limit {
-		var oldestKey string
-		var oldestTime time.Time
-		first := true
-		for k, v := range r.cache {
-			if first || v.lastAccessed.Before(oldestTime) {
-				oldestKey = k
-				oldestTime = v.lastAccessed
-				first = false
+	limit := 10000
+	if r.Config != nil && r.Config.Limit.DNSCacheSize > 0 {
+		limit = r.Config.Limit.DNSCacheSize
+	}
+
+	if _, exists := r.cache[key]; !exists && len(r.cache) >= limit {
+		r.evictSampledLocked(now, limit)
+	}
+
+	r.cache[key] = entry
+}
+
+// evictSampledLocked performs bounded O(1) sampled LRU eviction under cacheMu.Lock.
+func (r *Resolver) evictSampledLocked(now time.Time, limit int) {
+	const sampleLimit = 32
+	const maxIter = 64
+
+	var oldestKey dnsCacheKey
+	var oldestTime int64
+	hasOldest := false
+	sampled := 0
+	iters := 0
+
+	for k, v := range r.cache {
+		iters++
+		if !now.Before(v.expiresAt) {
+			delete(r.cache, k)
+			if len(r.cache) < limit {
+				return
 			}
+			if iters >= maxIter {
+				break
+			}
+			continue
 		}
-		if oldestKey != "" {
-			delete(r.cache, oldestKey)
+		t := v.lastAccessed.Load()
+		if !hasOldest || t < oldestTime {
+			oldestKey = k
+			oldestTime = t
+			hasOldest = true
+		}
+		sampled++
+		if sampled >= sampleLimit || iters >= maxIter {
+			break
 		}
 	}
-
-	now := time.Now()
-	r.cache[r.cacheKey(host, qType)] = cacheEntry{
-		ip:           ip,
-		expiresAt:    now.Add(time.Duration(ttl) * time.Second),
-		lastAccessed: now,
+	if hasOldest {
+		delete(r.cache, oldestKey)
 	}
 }
 
@@ -440,23 +642,27 @@ func (r *Resolver) cleanCacheRoutine() {
 			r.cacheMu.Lock()
 			now := time.Now()
 			for k, v := range r.cache {
-				if now.After(v.expiresAt) {
+				if !now.Before(v.expiresAt) {
 					delete(r.cache, k)
 				}
 			}
+			remaining := len(r.cache)
 			r.cacheMu.Unlock()
-			logger.DNS().Debug("dns cache cleanup completed", "entries", len(r.cache))
+			logger.DNS().Debug("dns cache cleanup completed", "entries", remaining)
 		}
 	}
 }
 
 func (r *Resolver) Invalidate(host string) {
 	r.cacheMu.Lock()
-	defer r.cacheMu.Unlock()
+	delete(r.cache, dnsCacheKey{host: host, qType: dns.TypeA})
+	delete(r.cache, dnsCacheKey{host: host, qType: dns.TypeAAAA})
+	delete(r.cache, dnsCacheKey{host: host, qType: 0}) // System DNS cache
+	r.cacheMu.Unlock()
 
-	delete(r.cache, r.cacheKey(host, dns.TypeA))
-	delete(r.cache, r.cacheKey(host, dns.TypeAAAA))
-	delete(r.cache, r.cacheKey(host, 0)) // System DNS cache
+	r.lookupSF.Forget(sfLookupKey(host, dns.TypeA))
+	r.lookupSF.Forget(sfLookupKey(host, dns.TypeAAAA))
+	r.systemSF.Forget(host)
 
 	logger.DNS().Debug("dns cache invalidated", "host", host)
 }
@@ -464,6 +670,9 @@ func (r *Resolver) Invalidate(host string) {
 // Close gracefully shuts down the resolver, stopping background routines.
 func (r *Resolver) Close() error {
 	close(r.stopChan)
+	if c, ok := r.backend.(io.Closer); ok {
+		return c.Close()
+	}
 	return nil
 }
 
