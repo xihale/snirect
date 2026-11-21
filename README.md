@@ -48,6 +48,7 @@ snirect status
 
 ### 开发文档
 
+- [代码地图与模块索引](CODEMAP.md)
 - [编译与发版](docs/build.md)
 - [Android 绑定层架构（gomobile）](android/bindings/README.md)
 
