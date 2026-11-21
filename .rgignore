@@ -1,0 +1,21 @@
+# High-noise build, lockfile, icon/image assets, and cache paths for ripgrep (rg)
+dist/
+out/
+.csearch/
+.ryugi/
+.freebuff/
+android/.gradle/
+android/build/
+android/*/build/
+android/app/libs/
+android/gradle/wrapper/gradle-wrapper.jar
+assets/
+site/assets/
+android/app/src/main/res/mipmap*/
+go.sum
+*.lock
+*.log
+*.png
+*.svg
+*.aar
+*.apk

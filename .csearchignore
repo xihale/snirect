@@ -1,0 +1,21 @@
+# Semantic index exclusions for csearch (preserve all real source code & CODEMAP.md)
+# Note: site/DESIGN.md is small (3KB) and stays indexed; strings/assets/build outputs are excluded.
+**/values*/strings.xml
+assets/
+site/assets/
+android/app/src/main/res/mipmap*/
+android/app/src/main/res/drawable/
+android/gradle/wrapper/
+android/app/libs/
+android/build/
+android/*/build/
+dist/
+out/
+go.sum
+*.lock
+*.log
+*.png
+*.svg
+*.aar
+*.apk
+*.jar
